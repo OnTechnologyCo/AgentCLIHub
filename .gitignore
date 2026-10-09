@@ -1,0 +1,28 @@
+# Visual Studio 및 .NET 빌드 산출물
+.vs/
+[Bb]in/
+[Oo]bj/
+artifacts/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# 로컬 인증 상태, 첨부파일, 실행 캐시
+.codex-probe/
+.llmtools-attachments/
+node_modules/
+.venv/
+venv/
+__pycache__/
+.pytest_cache/
+*.py[cod]
+*.log
+
+# 로컬 비밀 설정
+.env
+.env.*
+!.env.example
+*.pem
+*.pfx
+*.p12

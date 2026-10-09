@@ -1,0 +1,2475 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>LLM Tools</title>
+<!-- xterm.js — **로컬 번들이다.** 이 창은 폐쇄망에서도 떠야 하므로 CDN 을 못 쓴다.
+     web/vendor/ 에 넣고 csproj 가 출력 폴더로 복사한다. -->
+<link rel="stylesheet" href="vendor/xterm.css">
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: #1a1a1a; color: #ccc;
+    font: 13px/1.55 "Segoe UI", "맑은 고딕", sans-serif;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+
+  /* ── 머리줄 ─────────────────────────────────────────── */
+  header {
+    flex: 0 0 auto; padding: 6px 10px; border-bottom: 1px solid #2a2a2a;
+    display: flex; align-items: center; gap: 6px; background: #161616;
+  }
+  .btn {
+    background: #222; color: #aab; border: 1px solid #333; border-radius: 4px;
+    padding: 5px 10px; font: inherit; font-size: 11.5px; cursor: pointer; white-space: nowrap;
+  }
+  .btn:hover { background: #2b2b2b; color: #cde; }
+  .btn.act { background: #1E3A2A; color: #8FD8A8; border-color: #2C6E4B; }
+  .btn.act:hover { background: #27503a; color: #d6f0e0; }
+  .btn.on { color: #7ea; border-color: #3d6152; }
+  .btn:disabled { opacity: .45; cursor: default; }
+
+  /* 탭띠. **가로로만 넘친다** — 세로로 감기면 터미널이 그만큼 밀려 내려간다. */
+  #tabs {
+    flex: 1 1 auto; display: flex; gap: 4px; overflow-x: auto; overflow-y: hidden;
+    padding: 0 4px; scrollbar-width: thin;
+  }
+  #tabs::-webkit-scrollbar { height: 5px; }
+  #tabs::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+  .tab {
+    display: flex; align-items: center; gap: 6px; flex: 0 0 auto;
+    background: #1e1e1e; border: 1px solid #2e2e2e; border-radius: 5px;
+    padding: 4px 6px 4px 9px; cursor: pointer; max-width: 240px;
+  }
+  .tab:hover { background: #252525; }
+  .tab.on { background: #16241d; border-color: #3d6152; }
+  .tab .nm { font-size: 11.5px; color: #bcc; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tab.on .nm { color: #cfe9dc; }
+  /* 어느 CLI 인지. **탭마다 다를 수 있다** — 안 보이면 codex 탭에서 claude 문법을 친다. */
+  .tab .cli { font-size: 9.5px; color: #667; border: 1px solid #333; border-radius: 3px; padding: 0 4px; }
+  .tab.on .cli { color: #7ea; border-color: #3d6152; }
+  /* 계정. **기본 계정이면 안 붙는다** — 늘 "기본" 이 붙어 있으면 소음이다. 더 넣은 계정일 때만
+     어느 계정의 한도를 쓰고 있는지가 탭에서 보여야 한다(넘긴 뒤 헷갈리지 않게). */
+  .tab .acct { font-size: 9.5px; color: #c9b27a; max-width: 64px;
+               overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tab.login .acct { color: #8ab4f8; }
+  /* 브라우저 탭은 CLI 탭과 **같은 줄에 선다.** 색으로만 가른다 — 줄을 나누면
+     Jira 를 보다 CLI 로 돌아오는 것이 다시 창 전환이 된다. */
+  .tab .cli.web, .tab.on .cli.web { color: #8ab4f8; border-color: #38506e; }
+
+  /* 머리줄 바로가기(북마크). 주소를 안 넣은 것은 버튼도 안 나온다(renderSites 참조).
+     **탭띠와 자리를 나눠 쓴다.** 개수는 사용자가 정하므로 안 묶어 두면 북마크가 늘어난 만큼
+     탭이 밀려 사라진다 — 절반까지만 차지하고 넘치면 탭띠처럼 가로로 넘긴다. */
+  #sites {
+    display: flex; gap: 4px; flex: 0 1 auto; max-width: 45%;
+    overflow-x: auto; overflow-y: hidden; scrollbar-width: thin;
+  }
+  #sites::-webkit-scrollbar { height: 5px; }
+  #sites::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+  /* 이름이 길어도 한 개가 줄을 다 먹지 않는다. */
+  #sites .btn { max-width: 160px; overflow: hidden; text-overflow: ellipsis; }
+  /* 아직 안 뜬 탭·죽은 탭을 구별한다. 색 하나로 "지금 살아 있는가"를 말한다. */
+  .tab .dot { width: 6px; height: 6px; border-radius: 50%; background: #555; flex: 0 0 auto; }
+  .tab .dot.live { background: #4c9; }
+  .tab .dot.dead { background: #a55; }
+  .tab .x { background: none; border: none; color: #667; cursor: pointer; font-size: 13px; line-height: 1; padding: 0 2px; }
+  .tab .x:hover { color: #d99; }
+  /* 이름을 탭 안에서 바로 고친다. 폭을 고정해 두지 않으면 고치는 동안 탭띠가 출렁인다. */
+  .tab .nmedit {
+    width: 120px; background: #101010; color: #dfe; border: 1px solid #3d6152;
+    border-radius: 3px; font: inherit; font-size: 11.5px; padding: 1px 4px;
+  }
+  .tab .nmedit:focus { outline: none; }
+
+  /* ── 판 ─────────────────────────────────────────────── */
+  #panes { flex: 1 1 auto; position: relative; min-height: 0; background: #101010; }
+  .pane { position: absolute; inset: 0; display: none; padding: 4px 6px; }
+  .pane.on { display: block; }
+  .pane .xterm { height: 100%; }
+
+  /* ── 브라우저 판 ────────────────────────────────────── */
+  /* .pane.on 보다 클래스가 하나 많아 이긴다(block → flex). */
+  .pane.web { padding: 0; }
+  .pane.web.on { display: flex; flex-direction: column; }
+  .bbar {
+    flex: 0 0 auto; display: flex; align-items: center; gap: 4px;
+    padding: 5px 6px; background: #161616; border-bottom: 1px solid #2a2a2a;
+  }
+  /* 뒤로·앞으로·새로고침. **크고 하얗다** — 이 줄에서 가장 자주 누르는 것이라
+     주변 글자와 같은 밝기면 눌러야 할 곳을 매번 찾게 된다. */
+  .bbtn {
+    background: #262626; border: 1px solid #3f3f3f; border-radius: 4px; color: #fff;
+    font-size: 19px; line-height: 1; padding: 3px 11px 5px; cursor: pointer;
+    min-width: 40px;
+    /* Segoe UI 의 화살표는 획이 가늘다. WebView2 는 Chromium 이라 획을 덧대 굵힐 수 있다. */
+    -webkit-text-stroke: 0.6px currentColor;
+  }
+  .bbtn:hover:not(:disabled) { background: #3a3a3a; border-color: #5a6b7a; }
+  /* 갈 곳이 없을 때. **투명도로 죽이지 않는다** — 흐려 놓으면 살아 있는 버튼까지
+     같이 탁해 보인다. 색만 회색으로 내려 살아 있는 흰색과 구별한다. */
+  .bbtn:disabled { color: #4e555e; background: #1c1c1c; border-color: #2c2c2c; cursor: default; }
+  .burl {
+    flex: 1 1 auto; min-width: 0; background: #141414; color: #ddd;
+    border: 1px solid #333; border-radius: 4px; padding: 5px 8px;
+    font: inherit; font-size: 12px;
+  }
+  .burl:focus { outline: none; border-color: #3d6152; }
+  /* **여기는 비워 둔다.** 실제 웹 화면은 호스트가 이 사각형 위에 네이티브 WebView2 를
+     얹어서 그린다 — 세 사이트 모두 X-Frame-Options 로 iframe 을 막기 때문이다. */
+  .bview { flex: 1 1 auto; min-height: 0; background: #101010; }
+
+  /* 탭이 하나도 없을 때. **빈 검은 판은 고장과 구별되지 않는다.** */
+  #empty {
+    position: absolute; inset: 0; display: none; flex-direction: column;
+    align-items: center; justify-content: center; gap: 10px; color: #667;
+  }
+  #empty.on { display: flex; }
+  #empty .big { font-size: 15px; color: #8a97a8; }
+
+  #conf { display: none; flex: 1 1 auto; overflow-y: auto; padding: 14px; }
+  #conf.on { display: block; }
+
+  .card {
+    background: #1e1e1e; border: 1px solid #2c2c2c; border-radius: 6px;
+    padding: 12px 14px; margin-bottom: 12px; max-width: 860px;
+  }
+  .card > .h { font-size: 12.5px; color: #cde; font-weight: 600; }
+  .grid {
+    display: grid; grid-template-columns: 150px 1fr; gap: 8px 12px;
+    align-items: center; margin-top: 10px;
+  }
+  .grid label { color: #99a; font-size: 12px; }
+  .grid input, .grid select, .bm input, .bm select {
+    background: #141414; color: #ddd; border: 1px solid #333; border-radius: 4px;
+    padding: 5px 7px; font: inherit; font-size: 12px; width: 100%;
+  }
+  .grid input:focus, .grid select:focus,
+  .bm input:focus, .bm select:focus { outline: none; border-color: #3d6152; }
+
+  /* 바로가기 목록. 줄마다 [이름][주소][표시/숨김][손잡이] 넷이다 —
+     주소만 늘어나게 둔다(가장 긴 값이고, 잘리면 어디였는지 알 수 없다). */
+  .bm {
+    display: grid; grid-template-columns: 150px 1fr 78px auto; gap: 6px 8px;
+    align-items: center; margin-top: 10px;
+  }
+  .bm .bmh { color: #99a; font-size: 11px; }
+  .bm .bmops { display: flex; gap: 4px; }
+  .bm .bmops .btn { padding: 4px 7px; }
+  .bm .bmempty { grid-column: 1 / -1; color: #6b7684; font-size: 12px; }
+  .bmadd { display: flex; gap: 6px; margin-top: 9px; align-items: center; }
+  .row2 { display: flex; gap: 6px; }
+  .note { color: #6b7684; font-size: 11.5px; margin-top: 9px; white-space: pre-wrap; }
+
+  /* 오른쪽 버튼 차림표. 창 어디에나 뜨므로 제일 위에 둔다 — 다만 브라우저 판(WebView2)은
+     HwndHost 라 HTML 위에 그려지므로, 브라우저 탭 안에서는 그쪽 기본 차림표가 뜬다. */
+  #menu {
+    position: fixed; z-index: 200; display: none; min-width: 168px; padding: 4px;
+    background: #1e1e1e; border: 1px solid #363636; border-radius: 6px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.55);
+  }
+  #menu button {
+    display: flex; align-items: center; gap: 14px; width: 100%; justify-content: space-between;
+    background: none; border: none; border-radius: 4px; color: #ccd; cursor: pointer;
+    font: inherit; font-size: 12px; padding: 5px 9px; text-align: left; white-space: nowrap;
+  }
+  #menu button:hover:not(:disabled) { background: #2b3b34; color: #cfe9dc; }
+  #menu button:disabled { color: #5a6068; cursor: default; }
+  #menu .k { color: #666d76; font-size: 10.5px; }
+  #menu .sep { height: 1px; background: #333; margin: 4px 6px; }
+  .det { font-family: Consolas, monospace; font-size: 11.5px; color: #7f9; word-break: break-all; }
+  .det.bad { color: #d99; }
+
+  /* ── 지난 대화 목록 ─────────────────────────────────── */
+  #hist { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none; z-index: 50; }
+  #hist.on { display: flex; align-items: center; justify-content: center; }
+  #hist .box {
+    background: #1b1b1b; border: 1px solid #333; border-radius: 8px;
+    width: min(880px, 92vw); max-height: 82vh; display: flex; flex-direction: column;
+  }
+  #hist .hh { padding: 12px 14px; border-bottom: 1px solid #2a2a2a; display: flex; align-items: center; gap: 8px; }
+  #hist .hh .t { font-size: 13px; color: #cde; font-weight: 600; }
+  #hist input.q {
+    margin-left: auto; background: #141414; color: #ddd; border: 1px solid #333;
+    border-radius: 4px; padding: 5px 8px; font: inherit; font-size: 12px; width: 260px;
+  }
+  #hist .list { overflow-y: auto; padding: 6px; }
+  /* **div 가 아니라 button 이다.** 목록에서 하나를 고르는 자리라 Tab 으로 옮겨 다니고
+     Enter 로 고를 수 있어야 한다 — div 에 click 만 달면 마우스 없이는 못 쓴다. */
+  button.hrow {
+    display: grid; grid-template-columns: 74px 1fr; gap: 2px 10px; width: 100%;
+    padding: 8px 10px; border-radius: 5px; cursor: pointer; border: 1px solid transparent;
+    background: transparent; font: inherit; text-align: left;
+  }
+  .hrow:hover { background: #232323; border-color: #333; }
+  .hrow:focus-visible { outline: none; background: #232323; border-color: #3d6152; }
+  .hrow .cli { font-size: 10px; color: #7ea; border: 1px solid #3d6152; border-radius: 3px;
+               padding: 1px 4px; text-align: center; align-self: start; }
+  .hrow .cli.codex { color: #c9a; border-color: #5a4468; }
+  .hrow .ti { font-size: 12.5px; color: #ccd; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hrow .mt { grid-column: 2; font-size: 11px; color: #667;
+              overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #hist .ft { padding: 9px 14px; border-top: 1px solid #2a2a2a; display: flex; gap: 8px; align-items: center; }
+  #hist .ft .note { margin: 0; }
+
+  /* ── 새 대화: CLI 고르기 ────────────────────────────── */
+  /* [＋ 새 대화] 바로 밑에 붙는 작은 창. **창 전체를 덮는 투명한 막**은 바깥을 누르면 닫히게
+     하려는 것이다 — 막이 없으면 옆 탭을 누른 것이 창을 닫으면서 탭까지 바꿔, 무엇을 눌렀는지 헷갈린다. */
+  #pick { position: fixed; inset: 0; display: none; z-index: 60; }
+  #pick.on { display: block; }
+  #pick .box {
+    position: absolute; width: 360px; max-width: calc(100vw - 16px); padding: 6px;
+    background: #1b1b1b; border: 1px solid #363636; border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.55);
+  }
+  #pick .ph { font-size: 12px; color: #cde; font-weight: 600; padding: 3px 6px 6px; }
+  /* **div 가 아니라 button 이다** — 지난 대화 목록과 같은 이유(키보드로 옮기고 Enter 로 고른다). */
+  button.prow {
+    display: grid; grid-template-columns: 26px 1fr auto; gap: 1px 9px; align-items: center;
+    width: 100%; padding: 7px 8px; border-radius: 5px; border: 1px solid transparent;
+    background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer;
+  }
+  button.prow:hover:not(:disabled) { background: #232323; border-color: #333; }
+  /* 초점은 **늘** 보인다(:focus-visible 이 아니다). 마우스로 열어도 Enter 가 무엇을 고를지 보여야 한다. */
+  button.prow:focus { outline: none; background: #16241d; border-color: #3d6152; }
+  button.prow:disabled { cursor: default; }
+  .prow .cli { grid-row: 1 / span 2; align-self: start; margin-top: 2px; font-size: 10px; text-align: center;
+               color: #7ea; border: 1px solid #3d6152; border-radius: 3px; padding: 1px 0; }
+  .prow .cli.codex { color: #c9a; border-color: #5a4468; }
+  .prow .nm { font-size: 12.5px; color: #dde; }
+  .prow .k { font-size: 10.5px; color: #666d76; }
+  .prow .sub { grid-column: 2 / span 2; font-size: 11px; color: #7d8794;
+               overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* 못 찾은 까닭은 **잘리면 안 된다** — 어디를 고쳐야 하는지가 그 글에 있다. */
+  .prow .sub.bad { color: #d99; white-space: normal; }
+  .prow:disabled .nm { color: #6a717a; }
+  .prow:disabled .cli { color: #5a6068; border-color: #333; }
+  #pick .pf { display: flex; align-items: center; gap: 8px; margin-top: 4px;
+              padding: 7px 6px 2px; border-top: 1px solid #2a2a2a; }
+  #pick .pf .note { margin: 0; }
+  #pick .pf .btn { margin-left: auto; }
+  .prow .acct { color: #c9b27a; }
+
+  /* ── 다른 계정으로 이어가기 ─────────────────────────── */
+  /* 탭 오른쪽 버튼에서 연다. 어느 탭의 일인지가 중요해 **가운데 덮개**로 띄운다(지난 대화 목록과 같다). */
+  #swap { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none; z-index: 55; }
+  #swap.on { display: flex; align-items: center; justify-content: center; }
+  #swap .box {
+    background: #1b1b1b; border: 1px solid #333; border-radius: 8px; padding: 8px;
+    width: min(640px, 92vw); max-height: 82vh; display: flex; flex-direction: column;
+  }
+  #swap .sh { font-size: 13px; color: #cde; font-weight: 600; padding: 4px 6px 2px; }
+  #swap .sfrom, #swap .ssess { font-size: 11.5px; color: #8a97a8; padding: 2px 6px; }
+  #swap .ssess b { color: #cfd6de; font-weight: 600; }
+  #swap .ssess.bad { color: #e8c98a; }
+  #swap .slist { overflow-y: auto; margin-top: 6px; border-top: 1px solid #2a2a2a; padding-top: 5px; }
+  #swap .sgrp { font-size: 10.5px; color: #667; padding: 6px 8px 2px; }
+  #swap .sf { display: flex; align-items: center; gap: 8px; margin-top: 6px;
+              padding: 7px 6px 2px; border-top: 1px solid #2a2a2a; }
+  #swap .sf .note { margin: 0; }
+  #swap .sf .btn { margin-left: auto; }
+  .prow .how { font-size: 10.5px; color: #7d8794; }
+  .prow .how.copy { color: #9fb4d0; }
+
+  /* ── 설정: 계정 ─────────────────────────────────────── */
+  .accs { display: grid; grid-template-columns: 110px 1fr auto; gap: 6px 10px; align-items: center; margin-top: 10px; }
+  .accs .acch { grid-column: 1 / -1; font-size: 11.5px; color: #99a; margin-top: 6px;
+                border-bottom: 1px solid #2a2a2a; padding-bottom: 3px; }
+  .accs .an { font-size: 12px; color: #dde; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .accs .an input { width: 100%; }
+  .accs .ai { font-size: 11px; color: #7d8794; min-width: 0; }
+  .accs .ai .em { color: #cfd6de; }
+  .accs .ai .ok { color: #7ea; }
+  .accs .ai .no { color: #d99; }
+  .accs .ao { display: flex; gap: 4px; justify-content: flex-end; }
+  .accs .ao .btn { padding: 4px 8px; }
+  .accs .atok { grid-column: 2 / -1; display: flex; gap: 6px; }
+  .accs .accadd { grid-column: 1 / -1; display: flex; gap: 6px; align-items: center; margin-bottom: 4px; }
+  .accs input, .accs select { background: #141414; color: #ddd; border: 1px solid #333; border-radius: 4px;
+                padding: 5px 7px; font: inherit; font-size: 12px; }
+  .accs input:focus, .accs select:focus { outline: none; border-color: #3d6152; }
+  .accs .accadd input { width: 220px; }
+  .accs .atok input { flex: 1 1 auto; }
+
+  /* ── 하단 입력 영역 ─────────────────────────────────── */
+  footer {
+    flex: 0 0 auto; border-top: 1px solid #2a2a2a; padding: 8px 10px 6px; background: #181818;
+  }
+  footer.off { display: none; }
+  /* 브라우저 탭에는 보낼 상대가 없다 — 입력줄을 남겨 두면 눌러도 아무 일이 안 일어난다.
+     기록·사용량 줄은 남긴다(어느 탭에서나 봐야 하는 것이다). */
+  footer.brow #atts, footer.brow .inrow { display: none; }
+  #atts { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 6px; }
+  #atts:empty { display: none; }
+  .att {
+    display: flex; align-items: center; gap: 5px; background: #222; border: 1px solid #343434;
+    border-radius: 4px; padding: 3px 5px 3px 7px; font-size: 11.5px; color: #bcd;
+  }
+  .att img { height: 26px; width: 26px; object-fit: cover; border-radius: 3px; }
+  .att .sz { color: #667; font-size: 10.5px; }
+  .att .rm { background: none; border: none; color: #889; cursor: pointer; font-size: 13px; line-height: 1; padding: 0 2px; }
+  .att .rm:hover { color: #d99; }
+
+  .inrow { display: flex; align-items: flex-end; gap: 6px; }
+  .attbtn {
+    background: #222; border: 1px solid #333; border-radius: 4px; color: #aab;
+    font-size: 14px; cursor: pointer; padding: 5px 8px; line-height: 1.2;
+  }
+  .attbtn:hover { background: #2b2b2b; }
+  #input {
+    flex: 1 1 auto; resize: none; max-height: 180px;
+    background: #141414; color: #ddd; border: 1px solid #333; border-radius: 4px;
+    padding: 7px 9px; font: inherit; font-size: 13px; line-height: 1.5;
+  }
+  #input:focus { outline: none; border-color: #3d6152; }
+
+  details.diag { margin-top: 6px; position: relative; }
+  details.diag summary { color: #5b6470; font-size: 11px; cursor: pointer; }
+
+  /* ── 사용량(맨 아래 줄) ─────────────────────────────── */
+  /* **늘 보인다** — 설정 화면·브라우저 탭·빈 화면에서도. 그래서 footer 밖에 따로 선다
+     (footer 는 설정 화면에서 통째로 숨는다). CLI 를 새 대화마다 고르므로 고르기 전에
+     두 계정이 얼마나 남았는지가 보여야 한다. 여는 자리가 아니므로 클릭은 안 받는다. */
+  #usage {
+    flex: 0 0 auto; display: flex; align-items: center; flex-wrap: wrap; gap: 3px 12px;
+    padding: 3px 8px 4px; background: #131313; border-top: 1px solid #262626;
+    font-size: 11px; color: #7d8794; cursor: default; user-select: none;
+  }
+  #usage:empty { display: none; }
+  #usage .acct {
+    display: flex; align-items: center; gap: 10px;
+    padding: 1px 8px; border: 1px solid transparent; border-radius: 10px;
+  }
+  /* 지금 탭의 계정. 활성 탭과 같은 초록으로 짚는다 — 둘이 나란히 있으면 지금 쓰는 쪽이
+     어느 것인지 매번 눈으로 골라내야 한다. */
+  #usage .acct.on { background: #16241d; border-color: #3d6152; }
+  #usage .an { font-weight: 600; color: #99a; }
+  #usage .acct.on .an { color: #cfe9dc; }
+  #usage .uw { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+  #usage .meter { width: 34px; height: 4px; border-radius: 2px; background: #2c2c2c; overflow: hidden; }
+  #usage .meter i { display: block; height: 100%; background: #4c9; }
+  #usage .meter i.w { background: #e8c98a; }
+  #usage .meter i.e { background: #d99; }
+  #usage b { font-weight: 600; color: #7ea; }
+  #usage b.w { color: #e8c98a; }
+  #usage b.e { color: #d99; }
+  #usage .dim { color: #5b6470; }
+  /* 기록은 터미널 위에 펼친다. 열고 닫을 때 행 수를 바꾸면 CLI 가 대화 이력을 재출력한다. */
+  #log { position: absolute; bottom: calc(100% + 6px); left: 0; right: 0; z-index: 30;
+         max-height: min(240px, 45vh); overflow-y: auto; padding: 8px 10px;
+         background: #191c20; border: 1px solid #39414a; border-radius: 5px;
+         box-shadow: 0 -4px 18px #0008;
+         font-family: Consolas, monospace; font-size: 11px; color: #7d8794; }
+  #log div { padding: 1px 0; white-space: pre-wrap; word-break: break-word; }
+  #log .w { color: #e8c98a; }
+  #log .e { color: #d99; }
+</style>
+</head>
+<body>
+
+<header>
+  <button class="btn act" id="newchat" title="CLI 와 폴더를 고르고 새 탭에서 처음부터 시작합니다">＋ 새 대화</button>
+  <button class="btn" id="resume" title="지난 대화 목록에서 골라 이어갑니다">↻ 이어하기</button>
+  <div id="sites"></div>
+  <div id="tabs"></div>
+  <button class="btn" id="tab-conf" title="CLI · 모델 · 권한 · 실행 파일">⚙ 설정</button>
+</header>
+
+<div id="panes">
+  <div id="empty">
+    <div class="big">열려 있는 대화가 없습니다.</div>
+    <div>[＋ 새 대화] 로 CLI 와 폴더를 고르거나, [↻ 이어하기] 로 지난 대화를 여세요.</div>
+  </div>
+</div>
+<div id="conf"></div>
+
+<!-- 오른쪽 버튼 차림표. 내용은 누른 자리에 따라 그때그때 채운다(showMenu). -->
+<div id="menu"></div>
+
+<footer id="foot">
+  <!-- 첨부 목록. 붙인 것이 보이지 않으면 사용자는 붙었는지 알 수 없다. -->
+  <div id="atts"></div>
+  <div class="inrow">
+    <button class="attbtn" id="attach" title="파일 첨부 (이미지는 Ctrl+V 로 붙여넣기도 됩니다)">📎</button>
+    <button class="attbtn" id="snip" title="화면 영역 캡처 — 끌어서 고르면 그림이 첨부에 붙습니다 (Esc 취소)">📷</button>
+    <textarea id="input" rows="1"
+              placeholder="무엇을 시킬까요?  (Enter 전송 · Shift+Enter 줄바꿈 · 이미지 Ctrl+V)"></textarea>
+    <button class="btn act" id="send">전송</button>
+  </div>
+
+  <details class="diag">
+    <summary>기록</summary>
+    <div id="log"></div>
+  </details>
+</footer>
+
+<!-- 계정 사용량. 두 계정 것을 늘 같이 보여 준다(renderUsage). footer 밖에 두는 이유는 CSS 참조. -->
+<div id="usage"></div>
+
+<!-- [＋ 새 대화] 의 CLI 고르기. **누를 때마다 고른다** — 설정에 하나를 박아 두지 않는다.
+     목록은 호스트가 준다(newchat): CLI 마다 찾았는가 · 무엇을 걸고 뜰 것인가. -->
+<div id="pick">
+  <div class="box">
+    <div class="ph">새 대화 — 어느 CLI 로 열까요?</div>
+    <div id="plist"></div>
+    <div class="pf">
+      <span class="note">고르면 작업 폴더를 묻습니다 · Esc 취소</span>
+      <button class="btn" id="pconf" title="CLI 마다 걸 모델 · 추론 강도 · 권한 · 실행 파일 경로">⚙ 설정</button>
+    </div>
+  </div>
+</div>
+
+<!-- 다른 계정으로 이어가기. 탭 오른쪽 버튼에서 연다. 목록은 호스트가 준다(switch · switch.session). -->
+<div id="swap">
+  <div class="box">
+    <div class="sh">다른 CLI·계정으로 이어가기</div>
+    <div class="sfrom" id="sfrom"></div>
+    <div class="ssess" id="ssess"></div>
+    <div class="slist" id="slist"></div>
+    <div class="sf">
+      <span class="note">↑↓ · Enter · 숫자로 고르기 · Esc 취소</span>
+      <button class="btn" id="sconf" title="계정 더하기 · 로그인 · 지우기">⚙ 계정 관리</button>
+    </div>
+  </div>
+</div>
+
+<!-- 지난 대화 목록. 브라우저 기본 창(alert/prompt)을 안 쓴다 —
+     그것들은 WebView2 가 호스트 창에 모달로 띄우고 그동안 UI 스레드를 잡는다. -->
+<div id="hist">
+  <div class="box">
+    <div class="hh">
+      <span class="t">지난 대화</span>
+      <input class="q" id="hq" placeholder="폴더·내용으로 거르기">
+    </div>
+    <div class="list" id="hlist"></div>
+    <div class="ft">
+      <span class="note" id="hnote"></span>
+      <button class="btn" id="hclose" style="margin-left:auto">닫기</button>
+    </div>
+  </div>
+</div>
+
+<!-- xterm.js (UMD). 로컬 번들이라 폐쇄망에서도 뜬다.
+     **본 스크립트보다 먼저 와야 한다** — window.Terminal / window.FitAddon 을 쓴다. -->
+<script src="vendor/xterm.js"></script>
+<script src="vendor/addon-fit.js"></script>
+<script src="locale-en.js"></script>
+<script src="i18n.js"></script>
+
+<script>
+const wv = window.chrome?.webview;
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[<>&"]/g, c =>
+  ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]));
+
+// ── 기록 ─────────────────────────────────────────────
+// **화면 쪽 예외를 삼키지 않는다.** 여기서 터지면 탭은 그려졌는데 CLI 를 띄우라는
+// 메시지가 안 나가는 식으로 절반만 된 상태가 되고, 화면에는 아무 단서도 안 남는다.
+// 개발자 도구를 열 수 없는 자리(배포본)에서는 이 줄이 유일한 실마리다.
+window.addEventListener('error', e => log(tr('화면 오류: ') + (e.message || e.error), 'e'));
+window.addEventListener('unhandledrejection', e => log(tr('화면 오류(비동기): ') + e.reason, 'e'));
+
+function log(msg, level) {
+  const box = $('log');
+  const d = document.createElement('div');
+  if (level && level !== 'i') d.className = level;
+  d.dataset.time = new Date().toLocaleTimeString(UiLanguage.current === 'en' ? 'en-US' : 'ko-KR', { hour12: false });
+  d.dataset.message = msg;
+  d.textContent = d.dataset.time + '  ' + tr(msg);
+  box.appendChild(d);
+  // 오래된 줄은 버린다 — 하루 종일 켜 두는 창이라 안 버리면 계속 늘어난다.
+  while (box.childElementCount > 400) box.removeChild(box.firstChild);
+  box.scrollTop = box.scrollHeight;
+}
+// 입력줄 밑에 상태 한 줄을 따로 두지 않는다. 거기 적히던 것은 모두 다른 곳에 이미 있다 —
+// CLI·폴더는 탭(배지 + 툴팁)에, 기동·종료·오류는 호스트가 기록에 남기고 터미널에도 직접 쓴다.
+// 같은 말을 두 곳에 적으면 한쪽만 고쳐졌을 때 어느 쪽이 맞는지 알 수 없게 된다.
+
+// ── 탭 ───────────────────────────────────────────────
+// 탭 하나 = CLI 세션 하나 = xterm 하나. **호스트도 같은 단위로 나뉘어 있다**
+// (TerminalHost 가 탭마다 한 벌). 한쪽만 합치면 출력이 옆 탭에 그려진다.
+const TABS = new Map();   // id -> { id, cwd, name, cli, backend, pane, term, fit, live }
+let active = null;
+let confOn = false;
+
+function tab(id) { return TABS.get(id); }
+function cur() { return active ? TABS.get(active) : null; }
+
+// Codex 0.159.3 + ConPTY 에서는 입력이 없으면 진행 시간의 새 출력 자체가 멎는 경우가 있다.
+// xterm.refresh() 로는 고칠 수 없다. 포커스 알림을 보내면 CLI 가 현재 상태를 다시 출력한다.
+// CSI I 는 키 입력이 아닌 FocusIn 이다. ConPTY 가 포커스 보고(?1004h)를 요청한 경우에만,
+// 사용자가 보고 있는 Codex 탭에 보낸다. 하단 입력창에 초점이 있어도 같은 대화다.
+// 정상 출력 중에는 보내지 않고, 무응답일 때도 최대 초당 두 번으로 제한한다.
+const CODEX_WAKE_MS = 500;
+function wakeIdleCodex() {
+  const t = cur();
+  if (!wv || confOn || document.hidden || !document.hasFocus() ||
+      !t?.live || t.login || t.backend !== 'codex_cli' || !t.pane.classList.contains('on') ||
+      !t.term?.modes.sendFocusMode) return;
+  if ($('hist').classList.contains('on') || pickIsOn() || swapIsOn()) return;
+  const now = performance.now();
+  if (now - t.lastOutputAt < CODEX_WAKE_MS || now - t.lastWakeAt < CODEX_WAKE_MS) return;
+  t.lastWakeAt = now;
+  wv.postMessage({ t: 'term.in', id: t.id, data: '\x1b[I' });
+}
+setInterval(wakeIdleCodex, CODEX_WAKE_MS);
+
+/** CLI 배지의 두 글자. 탭띠와 CLI 고르기 창이 같은 것을 쓴다 — 다르면 고른 것과 뜬 것을 맞춰 볼 수 없다. */
+function badge(backend) { return ({ codex_cli: 'CX', antigravity_cli: 'AG', claude_code: 'CC' })[backend] || '?'; }
+function cliName(backend) { return ({ codex_cli: 'Codex', antigravity_cli: 'Antigravity', claude_code: 'Claude' })[backend] || backend; }
+
+function addTab(m) {
+  const kind = m.kind || 'cli';
+  const pane = document.createElement('div');
+  pane.className = 'pane' + (kind === 'browser' ? ' web' : '');
+  $('panes').appendChild(pane);
+
+  const t = { id: m.id, kind, cwd: m.cwd, name: m.name, alias: m.alias || '', cli: m.cli,
+              backend: m.backend, memoryFile: m.memoryFile, url: m.url || '',
+              // 계정. 빈 값 = 기본 계정. 탭을 다른 계정으로 넘기면 호스트가 tab.switched 로 바꿔 준다.
+              account: m.account || '', accountName: m.accountName || '', login: !!m.login,
+              // 브라우저: 이 탭을 연 탭(팝업이 닫히면 거기로 돌아간다) · InPrivate(로그인 탭이 연 페이지).
+              opener: m.opener || '', inPrivate: !!m.inPrivate,
+              pane, term: null, fit: null, live: false,
+              lastOutputAt: performance.now(), lastWakeAt: 0 };
+  TABS.set(m.id, t);
+
+  // 브라우저 탭은 xterm 도 pty 도 없다. 크롬(뒤로·앞으로·주소)만 우리가 그리고,
+  // 웹 화면 자체는 호스트가 얹는다.
+  if (kind === 'browser') {
+    buildBrowserPane(t);
+    showTab(m.id);
+    renderTabs();
+    return;
+  }
+
+  if (window.Terminal) {
+    t.term = new window.Terminal({
+      // CLI 는 TUI 라 커서·색·유니코드 폭이 다 중요하다.
+      cursorBlink: true,
+      convertEol: false,
+      fontFamily: 'Consolas, "D2Coding", "맑은 고딕", monospace',
+      fontSize: 13,
+      scrollback: 5000,
+      // 한글·이모지 폭을 맞춘다. 안 맞으면 TUI 의 박스 그림이 어긋난다.
+      allowProposedApi: true,
+      theme: { background: '#101010', foreground: '#d4d4d4', cursor: '#7ea' },
+    });
+    if (window.FitAddon) { t.fit = new window.FitAddon.FitAddon(); t.term.loadAddon(t.fit); }
+    t.term.open(pane);
+
+    // 키 입력을 그대로 넘긴다. **여기서 가공하지 않는다** — TUI 는 화살표·Ctrl·이스케이프를
+    // 직접 해석하므로 중간에서 손대면 조작이 어긋난다.
+    t.term.onData(d => wv?.postMessage({ t: 'term.in', id: t.id, data: d }));
+    t.term.onResize(({ cols, rows }) => wv?.postMessage({ t: 'term.resize', id: t.id, cols, rows }));
+
+    // 복사. **Ctrl+C 를 무조건 가로채면 안 된다** — 터미널에서 그것은 중단(SIGINT)이고,
+    // 돌던 작업을 못 멈추게 되면 CLI 를 통째로 죽이는 수밖에 없다.
+    // 그래서 **고른 글자가 있을 때만** 복사로 본다(Windows 터미널과 같은 규칙).
+    // 언제나 복사하고 싶으면 Ctrl+Shift+C 다.
+    t.term.attachCustomKeyEventHandler(e => {
+      if (e.type !== 'keydown' || !e.ctrlKey) return true;
+      if (e.key.toLowerCase() === 'c' && (e.shiftKey || t.term.hasSelection())) {
+        const s = t.term.getSelection();
+        if (s) navigator.clipboard?.writeText(s).catch(() => {});
+        return false;                       // pty 로 안 보낸다
+      }
+      // Ctrl+V 는 가로채지 않는다 — xterm 이 숨은 textarea 의 paste 이벤트로 이미 처리하고,
+      // 대괄호 붙여넣기까지 알아서 감싼다. 여기서 손대면 그 경로가 두 번 돈다.
+      return true;
+    });
+
+    // 터미널에 **이미지를 붙여넣는 경우**. xterm 은 글자만 다루므로 그냥 사라진다 —
+    // 아래 첨부 목록으로 돌려보낸다. 캡처 → Ctrl+V 가 가장 흔한 사용 방식이다.
+    pane.addEventListener('paste', e => { if (grabImages(e.clipboardData)) e.preventDefault(); });
+  } else {
+    log(tr('xterm.js 를 불러오지 못했습니다 (vendor/xterm.js)'), 'e');
+  }
+
+  showTab(m.id);
+  renderTabs();
+
+  // **열자마자 띄운다.** 열·행은 화면만 아는 값이라 여기서 보낸다 —
+  // 호스트가 짐작한 크기로 띄우면 첫 화면이 어긋난 채 그려지고 TUI 는 그대로 계속 그린다.
+  fitNow(t);
+  wv?.postMessage({ t: 'term.start', id: t.id, cols: t.term?.cols || 80, rows: t.term?.rows || 24,
+                    fresh: !!m.fresh, sessionId: m.sessionId || '' });
+}
+
+// ── 브라우저 ─────────────────────────────────────────
+// 크롬만 HTML 이다. 웹 화면은 호스트가 .bview 사각형 위에 네이티브 WebView2 를 얹어 그린다 —
+// github·gitlab·atlassian 이 전부 X-Frame-Options 로 iframe 을 막기 때문에 다른 길이 없다.
+function buildBrowserPane(t) {
+  const bar = document.createElement('div');
+  bar.className = 'bbar';
+
+  const nav = (label, title, action) => {
+    const b = document.createElement('button');
+    b.className = 'bbtn';
+    b.textContent = label;
+    b.title = title;
+    b.addEventListener('click', () => wv?.postMessage({ t: 'browser.nav', id: t.id, action }));
+    bar.appendChild(b);
+    return b;
+  };
+  t.back = nav('←', tr('뒤로'), 'back');
+  t.fwd = nav('→', tr('앞으로'), 'forward');
+  t.reload = nav('⟳', tr('새로고침'), 'reload');
+  // 아직 아무 데도 안 갔으면 눌러도 갈 곳이 없다.
+  t.back.disabled = t.fwd.disabled = true;
+
+  const box = document.createElement('input');
+  box.className = 'burl';
+  box.spellcheck = false;
+  box.value = t.url;
+  box.placeholder = tr('주소를 넣고 Enter');
+  // 누르면 전체 선택. 긴 주소를 지우고 다시 치는 것이 매번이다.
+  box.addEventListener('focus', () => box.select());
+  box.addEventListener('keydown', e => {
+    if (e.key !== 'Enter' || e.isComposing) return;
+    wv?.postMessage({ t: 'browser.nav', id: t.id, action: 'go', url: box.value.trim() });
+    box.blur();
+  });
+  bar.appendChild(box);
+  t.urlBox = box;
+
+  const view = document.createElement('div');
+  view.className = 'bview';
+  t.view = view;
+
+  t.pane.append(bar, view);
+}
+
+/**
+ * 지금 보여 줄 브라우저 판이 어디에 얼마만 한지 호스트에 알린다.
+ *
+ * **숨겨야 하는 경우를 여기서 한 번에 판단한다.** WebView2 는 HwndHost 라 HTML 위에
+ * 무조건 그려진다 — 설정 화면이거나, CLI 탭이거나, 지난 대화 덮개가 떠 있으면 반드시
+ * 숨겨야 한다. 안 그러면 [↻ 이어하기] 를 눌러도 목록이 브라우저 뒤에 가려 안 보인다.
+ * [＋ 새 대화] 의 CLI 고르기 창도 같다 — 머리줄 밑으로 내려오므로 브라우저 판과 겹친다.
+ */
+function layoutBrowsers() {
+  const t = confOn ? null : cur();
+  const hidden = $('hist').classList.contains('on') || pickIsOn() || swapIsOn() || document.querySelector('details.diag').open;
+  const on = (t && t.kind === 'browser' && !hidden) ? t : null;
+
+  let r = { x: 0, y: 0, w: 0, h: 0 };
+  if (on) {
+    const b = on.view.getBoundingClientRect();
+    r = { x: Math.round(b.left), y: Math.round(b.top),
+          w: Math.round(b.width), h: Math.round(b.height) };
+  }
+  wv?.postMessage({ t: 'browser.layout', id: on ? on.id : '', ...r });
+}
+
+function closeTab(id) {
+  const t = tab(id);
+  if (!t) return;
+  wv?.postMessage({ t: 'tab.close', id });
+  try { t.term?.dispose(); } catch {}
+  t.pane.remove();
+  TABS.delete(id);
+  if (active === id) {
+    // 닫은 자리에서 가장 가까운 탭으로 간다. 아무 데도 안 가면 빈 화면만 남아
+    // 사용자가 "탭이 다 사라졌나" 하고 다시 확인해야 한다.
+    // **팝업이면 그 팝업을 연 탭으로** — 로그인 팝업이 스스로 닫힌 뒤 로그인이 이어지는 곳이 거기다.
+    active = null;
+    const rest = [...TABS.keys()];
+    if (t.opener && TABS.has(t.opener)) showTab(t.opener);
+    else if (rest.length) showTab(rest[rest.length - 1]);
+  }
+  renderTabs();
+  syncEmpty();
+}
+
+function showTab(id) {
+  if (!TABS.has(id)) return;
+  active = id;
+  confOn = false;
+  for (const t of TABS.values()) t.pane.classList.toggle('on', t.id === id);
+  $('conf').classList.remove('on');
+  $('tab-conf').classList.remove('on');
+  $('foot').classList.remove('off');
+  syncEmpty();
+  renderTabs();
+  const t = cur();
+  setTimeout(() => { fitNow(t); t?.term?.focus(); }, 30);
+}
+
+function showConf() {
+  confOn = true;
+  for (const t of TABS.values()) t.pane.classList.remove('on');
+  $('empty').classList.remove('on');
+  $('conf').classList.add('on');
+  $('tab-conf').classList.add('on');
+  // 설정 화면에는 보낼 상대가 없다 — 입력줄을 남겨 두면 눌러도 아무 일이 안 일어난다.
+  $('foot').classList.add('off');
+  renderTabs();
+  wv?.postMessage({ t: 'conf.get' });
+}
+
+function syncEmpty() {
+  $('empty').classList.toggle('on', !confOn && TABS.size === 0);
+}
+
+function renderTabs() {
+  const box = $('tabs');
+  box.replaceChildren();
+  for (const t of TABS.values()) {
+    const d = document.createElement('div');
+    d.className = 'tab' + (!confOn && t.id === active ? ' on' : '') + (t.login ? ' login' : '');
+    // 오른쪽 버튼 차림표가 어느 탭인지 알아야 한다. 자리(index)로 세면 탭이 닫힐 때 어긋난다.
+    d.dataset.id = t.id;
+    d.title = t.kind === 'browser'
+              ? `${t.name}\n${t.url}` + (t.inPrivate ? tr('\nInPrivate — 이 탭의 로그인은 탭을 닫으면 사라집니다(계정 로그인용)') : '')
+            : t.login ? tr`${t.cli} · '${t.accountName}' 계정 로그인`
+            : `${t.cli} · ${t.accountName ? tr`'${t.accountName}' 계정` : tr('기본 계정')} · ${t.cwd}\n` +
+              tr('오른쪽 버튼 → [다른 CLI·계정으로 이어가기] 로 대화를 넘길 수 있습니다');
+
+    // 브라우저 탭에는 살았다/죽었다가 없다 — 점을 달면 없는 상태를 있는 척하게 된다.
+    if (t.kind !== 'browser') {
+      const dot = document.createElement('span');
+      dot.className = 'dot' + (t.live ? ' live' : (t.dead ? ' dead' : ''));
+      d.appendChild(dot);
+    }
+
+    const cli = document.createElement('span');
+    cli.className = 'cli' + (t.kind === 'browser' ? ' web' : '');
+    cli.textContent = t.kind === 'browser' ? 'WEB' : badge(t.backend);
+    d.appendChild(cli);
+
+    // 더 넣은 계정이면 배지 옆에 그 이름. 로그인 탭은 무엇을 하는 탭인지가 이름보다 먼저다.
+    if (t.kind !== 'browser' && (t.accountName || t.login)) {
+      const ac = document.createElement('span');
+      ac.className = 'acct';
+      ac.textContent = t.login ? tr('로그인') : t.accountName;
+      d.appendChild(ac);
+    }
+    // InPrivate 브라우저 탭(계정 로그인 페이지). 보통 탭과 헷갈리면 "로그인했는데 다른 탭에선 안 돼 있다" 가 된다.
+    if (t.kind === 'browser' && t.inPrivate) {
+      const ip = document.createElement('span');
+      ip.className = 'acct';
+      ip.textContent = 'InPrivate';
+      d.appendChild(ip);
+    }
+
+    // 손으로 붙인 이름이 있으면 그것이 이긴다. **자동 이름은 그대로 둔다** —
+    // 브라우저 탭 이름은 페이지가 바뀔 때마다 문서 제목으로 덮어써지므로,
+    // 한 칸에 같이 담으면 이름을 붙인 뒤 링크 한 번에 사라진다.
+    if (renaming === t.id) {
+      const ed = document.createElement('input');
+      ed.className = 'nmedit';
+      ed.value = t.alias || t.name || '';
+      ed.title = tr('엔터로 확정 · Esc 취소 · 비우면 자동 이름으로 되돌아갑니다');
+      ed.addEventListener('mousedown', ev => ev.stopPropagation());   // 탭 전환으로 안 새게
+      ed.addEventListener('click', ev => ev.stopPropagation());
+      ed.addEventListener('keydown', ev => {
+        ev.stopPropagation();
+        if (ev.key === 'Enter') { ev.preventDefault(); renameTab(t.id, ed.value); }
+        else if (ev.key === 'Escape') { ev.preventDefault(); renaming = null; renderTabs(); }
+      });
+      // 칸 밖을 누르면 **친 것을 살린다.** 버리면 다 쳐 놓고 실수로 옆을 눌렀을 때 통째로 날아간다.
+      ed.addEventListener('blur', () => { if (renaming === t.id) renameTab(t.id, ed.value); });
+      d.appendChild(ed);
+      setTimeout(() => { ed.focus(); ed.select(); }, 0);
+    } else {
+      const nm = document.createElement('span');
+      nm.className = 'nm';
+      nm.textContent = t.alias || t.name;
+      d.appendChild(nm);
+    }
+
+    const x = document.createElement('button');
+    x.className = 'x';
+    x.textContent = '×';
+    x.title = tr('이 대화를 닫습니다 (CLI 도 함께 종료됩니다)');
+    x.addEventListener('click', ev => { ev.stopPropagation(); closeTab(t.id); });
+    d.appendChild(x);
+
+    d.addEventListener('click', () => showTab(t.id));
+    // 탭 이름 고치기의 **주 통로**. F2 는 터미널에 초점이 있으면 TUI 로도 같이 가므로
+    // 그때는 안 잡는다 — 더블클릭은 어디에 초점이 있든 같게 동작한다.
+    d.addEventListener('dblclick', ev => { ev.preventDefault(); startRename(t.id); });
+    box.appendChild(d);
+  }
+  // 탭을 건드리는 길은 모두 여기를 지난다(열기·닫기·전환·설정). 탭에 딸린 것은
+  // 여기 한 군데에 걸어 둔다 — 호출부마다 챙기면 반드시 한 곳을 빠뜨린다.
+  const a = confOn ? null : cur();
+  $('foot').classList.toggle('brow', !!a && a.kind === 'browser');
+  renderUsage();
+  layoutBrowsers();
+}
+
+/** 주소에서 호스트만. 이름을 안 붙인 북마크의 이름표다(호스트 쪽 BrowserHost.HostOf 와 같다). */
+const host = url => { try { return new URL(/^\w+:\/\//.test(url) ? url : 'https://' + url).host; } catch { return url; } };
+
+/** 머리줄 바로가기(북마크). **설정에 적힌 순서 그대로** 선다 — 목록이 곧 이 줄이다. */
+function renderSites() {
+  const box = $('sites');
+  box.replaceChildren();
+  (CONF?.settings?.Bookmarks || []).forEach(bm => {
+    // 숨김이거나 주소가 비었으면 버튼을 안 만든다. 눌러도 갈 곳이 없는 버튼은 고장으로 보인다.
+    if (bm.Show === false || !bm.Url) return;
+    const b = document.createElement('button');
+    b.className = 'btn';
+    // 이름을 안 넣은 줄도 버튼은 나온다 — 호스트를 이름으로 쓴다(호스트도 저장할 때
+    // 같은 값을 채운다). 주소를 통째로 찍으면 버튼 하나가 머리줄을 다 먹는다.
+    b.textContent = bm.Name || host(bm.Url);
+    b.title = bm.Url + tr(' 을 새 탭에서 엽니다');
+    b.addEventListener('click', () => wv?.postMessage({ t: 'tab.browser', url: bm.Url }));
+    box.appendChild(b);
+  });
+}
+
+// ── 사용량 ───────────────────────────────────────────
+// 맨 아래 줄에 **두 계정 것을 늘 같이** 그린다 — 설정 화면·브라우저 탭·빈 화면에서도.
+// CLI 를 새 대화마다 고르므로, 고르기 전에 어느 쪽이 얼마나 남았는지가 보여야 한다.
+// 지금 탭의 계정은 초록으로 짚는다(활성 탭과 같은 색).
+//
+// 리셋까지 남은 시간은 여기서 센다 — 호스트가 계산해 보내면 다음 갱신(2분)까지 숫자가
+// 멈춰 있고, 사용자는 그것이 멈춘 것인지 안 변한 것인지 구별할 수 없다.
+const USAGE = {};
+
+/** 사용량 칸의 열쇠 — CLI 와 계정(빈 값 = 기본 계정). 계정마다 한도가 따로다. */
+const ukey = (backend, account) => backend + '/' + (account || '');
+
+/**
+ * 줄에 설 계정의 CLI 별 이름과 못 읽었을 때의 까닭. **이름은 CLI 가 아니라 계정이다** — 한도는
+ * 요금제에 걸리고, 같은 계정을 다른 도구에서 써도 같이 줄어든다.
+ */
+const ACCOUNTS = [
+  { backend: 'claude_code', name: 'Claude',
+    none: tr('사용량을 읽지 못했습니다 — 망이 끊겼거나 로그인 전일 수 있습니다.') },
+  { backend: 'codex_cli', name: 'GPT',
+    none: tr('사용량을 아직 모릅니다 — codex 는 한 턴을 주고받을 때마다 한도를 기록에 남기고, 여기는 그것을 읽습니다.') },
+];
+const acctBase = backend => ACCOUNTS.find(a => a.backend === backend) || ACCOUNTS[0];
+
+/**
+ * 줄에 설 계정들 — 호스트가 준 계정 목록(기본 계정이 CLI 마다 맨 앞). **차례를 여기서 박는다** —
+ * 사용량 답은 도착 순서가 매번 달라서(claude 는 망을 탄다) 그대로 그리면 칸이 자리를 바꿔 가며 튄다.
+ * 설정이 오기 전에는 두 기본 계정만 선다.
+ */
+function usageAccounts() {
+  const list = CONF?.accounts;
+  if (list?.length) return list.filter(a => ACCOUNTS.some(k => k.backend === a.backend));
+  return ACCOUNTS.map(a => ({ backend: a.backend, id: '', name: tr('기본'), loggedIn: true }));
+}
+
+/** 계정 한 칸의 이름 — "Claude" · "Claude·회사" · "GPT·개인". */
+const acctLabel = a => acctBase(a.backend).name + (a.id ? '·' + a.name : '');
+
+/** 고르기 창에 적을 짧은 사용량. 모르면 빈 글 — "—" 를 늘어놓으면 고장으로 보인다. */
+function usageShort(backend, account) {
+  const rows = USAGE[ukey(backend, account)];
+  if (!rows?.length) return '';
+  return rows.map(w => `${w.label} ${w.pct}%`).join(' · ');
+}
+
+/** 이 계정의 창 중 가장 많이 쓴 비율. 고르기 창에서 색을 입힌다(60% 노랑 · 85% 빨강). */
+function usageMax(backend, account) {
+  const rows = USAGE[ukey(backend, account)];
+  return rows?.length ? Math.max(...rows.map(w => w.pct)) : -1;
+}
+
+function left(reset) {
+  const s = (reset || 0) - Math.floor(Date.now() / 1000);
+  if (s <= 0) return '';
+  const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
+  return d >= 1 ? `${d}d ${h}h` : h >= 1 ? `${h}h ${m}m` : `${m}m`;
+}
+
+/** 쓴 비율의 경고 단계. 막대와 숫자가 같은 것을 쓴다 — 둘의 색이 다르면 어느 쪽을 믿을지 모른다. */
+const usageLevel = pct => pct >= 85 ? 'e' : pct >= 60 ? 'w' : '';
+
+function renderUsage() {
+  const box = $('usage');
+  box.replaceChildren();
+
+  const t = confOn ? null : cur();
+  const span = (cls, text) => {
+    const s = document.createElement('span');
+    if (cls) s.className = cls;
+    if (text != null) s.textContent = text;
+    return s;
+  };
+
+  usageAccounts().forEach(a => {
+    // 깔려 있지 않은 CLI 의 계정은 뺀다. 늘 "—" 만 떠 있는 칸은 고장처럼 보인다.
+    if (CONF?.detect?.[a.backend]?.found === false) return;
+
+    const name = acctLabel(a);
+    const rows = USAGE[ukey(a.backend, a.id)];
+    // 지금 탭의 계정만 초록 — CLI 가 같아도 계정이 다르면 다른 칸이다.
+    const here = t && t.kind !== 'browser' && t.backend === a.backend && (t.account || '') === (a.id || '');
+    const g = span('acct' + (here ? ' on' : ''));
+    g.appendChild(span('an', name));
+
+    if (a.id && a.loggedIn === false) {
+      // 로그인 전인 계정은 읽을 것이 없다 — "읽는 중" 으로 두면 영영 안 끝난다.
+      g.appendChild(span('dim', tr('로그인 필요')));
+      g.title = tr`${name} — 로그인 전입니다. [⚙ 설정] → [계정] 에서 로그인하세요.`;
+    } else if (!rows) {
+      // 아직 한 번도 안 왔다(켜자마자). 비워 두면 못 읽은 것과 구별이 안 된다.
+      g.appendChild(span('dim', tr('읽는 중…')));
+      g.title = tr`${name} 사용량을 읽는 중입니다.`;
+    } else if (!rows.length) {
+      // 왔는데 비었다 = 못 읽었다. 지난 숫자를 남기지 않는다(호스트가 일부러 빈 목록을 보낸다).
+      g.appendChild(span('dim', '—'));
+      g.title = a.tokenOnly
+        ? tr`${name} — setup-token 로그인은 추론 전용이라 계정 사용량 조회가 거절됩니다. 한도에 닿으면 그 탭의 CLI 가 직접 알려 줍니다.`
+        : a.login === 'console'
+        ? tr`${name} — Console(API 과금) 계정은 5시간·주 한도가 아니라 사용한 만큼 과금돼 사용량 줄이 없습니다.`
+        : a.id && a.backend === 'claude_code'
+        ? tr`${name} — 사용량을 읽지 못했습니다. 한동안 안 쓴 계정은 로그인 토큰이 만료돼 있을 수 있습니다 — 그 계정으로 한 번 띄우면 다시 읽힙니다.`
+        : acctBase(a.backend).none;
+    } else {
+      rows.forEach(w => {
+        const lv = usageLevel(w.pct);
+        const u = span('uw');
+        const meter = span('meter');
+        const fill = document.createElement('i');
+        if (lv) fill.className = lv;
+        fill.style.width = Math.max(0, Math.min(100, w.pct)) + '%';
+        meter.appendChild(fill);
+        const b = document.createElement('b');
+        if (lv) b.className = lv;
+        b.textContent = w.pct + '%';
+        u.append(span('', w.label), meter, b);
+        const l = left(w.reset);
+        if (l) u.appendChild(span('dim', l));
+        g.appendChild(u);
+      });
+      // 숫자 옆의 시간이 무엇인지는 풀어서 적어 둔다 — 줄에는 자리가 없다.
+      g.title = tr`${name} 계정 사용량${a.email ? ' — ' + a.email : ''}\n` +
+        rows.map(w => tr`${w.label} — ${w.pct}% 사용, ${left(w.reset) || tr('곧')} 뒤 리셋`).join('\n');
+    }
+    box.appendChild(g);
+  });
+}
+
+// 남은 시간이 흐른다. 30초면 분 단위 표시가 한 칸 밀리기 전에 따라잡는다.
+setInterval(renderUsage, 30000);
+
+function fitNow(t) { try { t?.fit?.fit(); } catch {} }
+
+// 창을 끌어 늘리는 동안의 중간 크기는 보내지 않는다. Codex 는 resize 마다 이력을 재배치한다.
+let fitTimer = null;
+new ResizeObserver(() => {
+  clearTimeout(fitTimer);
+  const id = active;
+  fitTimer = setTimeout(() => { if (!confOn && active === id) fitNow(tab(id)); }, 200);
+  layoutBrowsers();
+}).observe($('panes'));
+document.querySelector('details.diag').addEventListener('toggle', layoutBrowsers);
+
+$('tab-conf').addEventListener('click', () => (confOn && active) ? showTab(active) : showConf());
+
+// ── 새 대화: CLI 고르기 ──────────────────────────────
+// **누를 때마다 고른다.** 설정에 CLI 하나를 박아 두면 다른 CLI 로 한 번 열어 보려고 설정을
+// 바꿨다가 되돌리는 일이 매번이 되고, 되돌리는 것을 잊으면 다음 대화가 엉뚱한 CLI 로 뜬다.
+//
+// 목록은 **누를 때마다 호스트에 새로 묻는다**(newchat.list → newchat). 그 사이 CLI 를 깔았거나
+// 지웠을 수 있고, 적힌 값(모델·강도·권한)은 설정 화면에 고치다 만 것이 아니라 **저장된 것**이어야
+// 한다 — 여기 적힌 것과 실제로 뜨는 것이 다르면 이 창이 거짓말을 한다.
+let PICK = null;          // { last, items: [{ backend, display, found, path, error, opts: [{label, value}] }] }
+let pickAt = 0;           // 연 시각. 두 번 누르기가 막을 눌러 곧바로 닫히지 않게 한다(아래 mousedown)
+
+function pickIsOn() { return $('pick').classList.contains('on'); }
+
+function pickOpen(on) {
+  if (on === pickIsOn()) return;
+  $('pick').classList.toggle('on', on);
+  // 브라우저 판을 숨기고 되살린다 — 네이티브 창이라 HTML 위에 그려져 이 창을 가린다.
+  layoutBrowsers();
+  if (on) {
+    pickAt = performance.now();
+    placePick();
+    pickFocus();
+  } else if (!confOn) {
+    // 보던 터미널로 초점을 돌려준다. 안 돌려주면 이어서 친 글자가 아무 데도 안 간다.
+    cur()?.term?.focus();
+  }
+}
+
+/** 마지막으로 고른 CLI·계정을 먼저 짚는다 — Enter 한 번이면 같은 것으로 연다. 고를 것이 없으면 [⚙ 설정]. */
+function pickFocus() {
+  const rows = [...$('plist').querySelectorAll('button.prow:not(:disabled)')];
+  (rows.find(b => b.dataset.backend === PICK?.last && b.dataset.account === (PICK?.lastAccount || '')) ||
+   rows.find(b => b.dataset.backend === PICK?.last) || rows[0] || $('pconf')).focus();
+}
+
+/** [＋ 새 대화] 바로 밑. 창이 좁으면 안쪽으로 당긴다. */
+function placePick() {
+  const r = $('newchat').getBoundingClientRect();
+  const box = $('pick').querySelector('.box');
+  box.style.left = Math.max(8, Math.min(r.left, innerWidth - box.offsetWidth - 8)) + 'px';
+  box.style.top = Math.round(r.bottom + 4) + 'px';
+}
+
+function renderPick() {
+  const list = $('plist');
+  list.replaceChildren();
+  const items = PICK?.items || [];
+  // 계정을 더 넣은 CLI 만 줄마다 계정 이름을 붙인다. 계정이 하나뿐이면 "· 기본" 은 소음이다.
+  const multi = b => items.filter(x => x.backend === b).length > 1;
+  items.forEach((c, i) => {
+    const b = document.createElement('button');
+    b.className = 'prow';
+    b.dataset.backend = c.backend;
+    b.dataset.account = c.account || '';
+    // 못 찾은 CLI 는 **못 고르게 한다.** 고르게 두면 폴더까지 고른 뒤에야 빈 탭에
+    // "찾지 못했습니다" 가 뜬다 — 헛걸음을 시킨 뒤에 알리는 셈이다. 로그인 전인 계정도 같다.
+    const usable = c.found && c.usable !== false;
+    b.disabled = !usable;
+
+    const cli = document.createElement('span');
+    cli.className = 'cli' + (c.backend === 'codex_cli' ? ' codex' : '');
+    cli.textContent = badge(c.backend);
+    const nm = document.createElement('span');
+    nm.className = 'nm';
+    nm.textContent = c.display;
+    if (multi(c.backend)) {
+      const ac = document.createElement('span');
+      ac.className = 'acct';
+      ac.textContent = ' · ' + (c.account ? c.accountName : tr('기본'));
+      nm.appendChild(ac);
+    }
+    const k = document.createElement('span');
+    k.className = 'k';
+    k.textContent = i < 9 ? String(i + 1) : '';
+
+    // 무엇을 걸고 뜰지. 빈 값은 안 걸리므로(= CLI 기본값) 호스트가 이미 빼고 보낸다.
+    // **이름을 붙여 적는다** — 값만 늘어놓으면 `never` 가 무엇을 안 한다는 것인지, 모델을 비워
+    // 둔 채 `high` 만 남았을 때 그것이 무엇인지 알 수 없다.
+    const opts = c.opts || [];
+    const use = usageShort(c.backend, c.account);
+    const sub = document.createElement('span');
+    sub.className = 'sub' + (usable ? '' : ' bad');
+    sub.textContent = !c.found ? `✘ ${tr(c.error) || tr('찾지 못했습니다')}`
+                    : !usable ? `✘ ${tr(c.note) || tr('로그인 필요')}`
+                    : [use && tr`사용량 ${use}`,
+                       opts.length ? opts.map(o => `${tr(o.label)} ${o.value}`).join(' · ') : tr('CLI 기본값 그대로')]
+                        .filter(Boolean).join('  |  ');
+    b.title = !c.found ? tr(c.error)
+            : [c.path, c.email && tr`계정: ${c.email}`, ...opts.map(o => `${tr(o.label)}: ${o.value}`)].filter(Boolean).join('\n');
+
+    b.append(cli, nm, k, sub);
+    b.addEventListener('click', () => pickCli(c.backend, c.account || ''));
+    list.appendChild(b);
+  });
+}
+
+function pickCli(backend, account) {
+  pickOpen(false);
+  // 폴더는 호스트가 묻는다(Windows 대화상자). 취소하면 tab.cancel 이 온다.
+  wv?.postMessage({ t: 'tab.new', backend, account: account || '' });
+}
+
+$('newchat').addEventListener('click', () => wv?.postMessage({ t: 'newchat.list' }));
+$('pconf').addEventListener('click', () => { pickOpen(false); showConf(); });
+
+// 막(창 바깥)을 누르면 닫는다. 창 안을 누른 것은 target 이 막이 아니라서 여기서 안 걸린다.
+// **연 직후는 봐준다** — [＋ 새 대화] 를 두 번 누르는 버릇이 있으면 두 번째가 막에 떨어져
+// 창이 열리자마자 닫히고, 화면에는 "눌러도 아무것도 안 뜬다" 로만 보인다.
+$('pick').addEventListener('mousedown', e => {
+  if (e.target === $('pick') && performance.now() - pickAt > 350) pickOpen(false);
+});
+
+// 화살표로 옮기고 숫자로 바로 고른다. Enter·Space 는 button 이 알아서 누른다.
+$('pick').addEventListener('keydown', e => {
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    const rows = [...$('plist').querySelectorAll('button.prow:not(:disabled)')];
+    if (!rows.length) return;
+    const at = rows.indexOf(document.activeElement);
+    const next = e.key === 'ArrowDown'
+      ? (at + 1) % rows.length
+      : (at <= 0 ? rows.length - 1 : at - 1);
+    rows[next].focus();
+  } else if (/^[1-9]$/.test(e.key)) {
+    const b = $('plist').children[Number(e.key) - 1];
+    if (b && !b.disabled) { e.preventDefault(); b.click(); }
+  }
+});
+
+window.addEventListener('resize', () => { if (pickIsOn()) placePick(); });
+
+// ── 다른 계정으로 이어가기 ───────────────────────────
+// 탭 오른쪽 버튼에서 연다. 계정의 한도가 차면 **그 탭의 대화를 다른 계정·다른 CLI 로 넘겨** 이어간다.
+// 탭은 그대로 두고 안의 CLI 만 갈아 끼운다(호스트의 SwitchTab → tab.switched).
+//
+// 목록은 호스트가 준다(switch): 넘길 곳마다 CLI·계정·로그인 여부·**어떻게 넘어가는가**
+// (same = 같은 대화 파일을 그대로 잇는다 · copy = 받을 CLI 형식으로 옮겨 쓴 새 대화).
+// 넘길 대화(첫 발화)는 조금 뒤에 따로 온다(switch.session) — 큰 기록은 읽는 데 시간이 걸린다.
+let SWAP = null;   // { id, from, items, session, loading }
+let swapAt = 0;
+
+function swapIsOn() { return $('swap').classList.contains('on'); }
+
+function swapOpen(on) {
+  if (on === swapIsOn()) return;
+  $('swap').classList.toggle('on', on);
+  layoutBrowsers();                 // 브라우저 판은 네이티브 창이라 이 덮개를 가린다
+  if (on) { swapAt = performance.now(); swapFocus(); }
+  else if (!confOn) cur()?.term?.focus();
+}
+
+function swapFocus() {
+  const rows = [...$('slist').querySelectorAll('button.prow:not(:disabled)')];
+  (rows[0] || $('sconf')).focus();
+}
+
+function renderSwapSession() {
+  const el = $('ssess');
+  el.className = 'ssess';
+  const s = SWAP?.session;
+  if (SWAP?.loading) { el.textContent = tr('넘길 대화를 찾는 중…'); return; }
+  if (s?.error) { el.className = 'ssess bad'; el.textContent = tr(s.error); return; }
+  if (!s || s.empty) {
+    el.className = 'ssess bad';
+    el.textContent = tr('넘길 대화 기록이 아직 없습니다 — 고르면 그 계정으로 새 대화를 엽니다.');
+    return;
+  }
+  el.replaceChildren();
+  el.append(tr('넘길 대화: '));
+  const b = document.createElement('b');
+  b.textContent = s.title || tr('(제목 없음)');
+  el.appendChild(b);
+  el.append(tr`  ·  사용자 말 ${s.turns}개  ·  마지막 ${s.when}`);
+  el.title = tr`세션 ${s.id}`;
+}
+
+function renderSwap() {
+  if (!SWAP) return;
+  const f = SWAP.from || {};
+  const use = usageShort(f.backend, f.account);
+  $('sfrom').textContent = tr`지금: ${f.display} · ${f.account ? f.accountName : tr('기본')} 계정` + (use ? tr`  (사용량 ${use})` : '');
+  renderSwapSession();
+
+  const list = $('slist');
+  // 다시 그려도 **초점은 그 줄에 남긴다** — 고르는 중에 사용량이 새로 오면 목록을 다시 그리는데,
+  // 초점이 사라지면 화살표·Enter 가 허공에 간다.
+  const was = list.contains(document.activeElement) ? document.activeElement.dataset : null;
+  const keep = was ? { backend: was.backend, account: was.account } : null;
+  list.replaceChildren();
+  let n = 0;
+  let group = '';
+  (SWAP.items || []).forEach(c => {
+    // CLI 마다 작은 머리를 단다 — 같은 CLI 끼리는 대화가 그대로 가고, 다른 CLI 로는 옮겨 쓴다.
+    if (c.backend !== group) {
+      group = c.backend;
+      const g = document.createElement('div');
+      g.className = 'sgrp';
+      g.textContent = c.display;
+      list.appendChild(g);
+    }
+    const b = document.createElement('button');
+    b.className = 'prow';
+    b.dataset.backend = c.backend;
+    b.dataset.account = c.account || '';
+    b.disabled = !c.usable || !!SWAP.loading || !!SWAP.session?.error;
+
+    const cli = document.createElement('span');
+    cli.className = 'cli' + (c.backend === 'codex_cli' ? ' codex' : c.backend === 'antigravity_cli' ? ' antigravity' : '');
+    cli.textContent = badge(c.backend);
+    const nm = document.createElement('span');
+    nm.className = 'nm';
+    nm.textContent = `${c.display} · `;
+    const ac = document.createElement('span');
+    ac.className = 'acct';
+    ac.textContent = (c.account ? c.accountName : tr('기본')) + tr(' 계정');
+    nm.appendChild(ac);
+    const k = document.createElement('span');
+    k.className = 'k';
+    k.textContent = c.usable && n < 9 ? String(++n) : '';
+    b.dataset.key = k.textContent;
+
+    const sub = document.createElement('span');
+    sub.className = 'sub' + (c.usable ? '' : ' bad');
+    const how = document.createElement('span');
+    how.className = 'how' + (c.how === 'copy' ? ' copy' : '');
+    if (!c.usable) {
+      sub.textContent = `✘ ${tr(c.why) || tr('쓸 수 없습니다')}`;
+    } else {
+      const u = usageShort(c.backend, c.account);
+      const lv = usageLevel(Math.max(0, usageMax(c.backend, c.account)));
+      sub.textContent = u ? tr`사용량 ${u}${lv === 'e' ? tr('  ⚠ 거의 다 씀') : ''}  |  ` : '';
+      how.textContent = c.how === 'same'
+        ? tr('같은 대화를 그대로 이어감')
+        : c.how === 'context' ? tr('이전 대화를 인계 파일로 전달하여 이어감')
+        : tr('대화 기록을 옮겨 새 대화로 이어감');
+      sub.appendChild(how);
+    }
+    b.title = c.how === 'same'
+      ? tr('같은 대화 파일을 그 계정으로 --resume 합니다 — 앞 대화가 그대로 이어집니다.')
+      : c.how === 'context' ? tr('이전 요청·답변·도구 기록을 인계 파일로 전달하고 Antigravity 새 대화를 엽니다.\n선택한 모델이 내용을 확인한 뒤 다음 요청을 기다립니다. 원본 기록은 유지됩니다.')
+      : tr('앞 대화(요청·답·도구 호출과 결과)를 받을 CLI 의 기록으로 옮겨 쓰고, 그것을 이어하기로 엽니다.\n') +
+        tr('원본 기록은 그대로 남습니다. 아주 긴 대화는 앞쪽을 줄이고 원본 경로를 적어 둡니다.');
+    if (c.email) b.title += tr`\n계정: ${c.email}`;
+
+    b.append(cli, nm, k, sub);
+    b.addEventListener('click', () => swapPick(c));
+    list.appendChild(b);
+  });
+  if (!n) {
+    const e = document.createElement('div');
+    e.className = 'note';
+    e.style.padding = '8px';
+    e.textContent = tr('넘길 수 있는 계정이 없습니다 — [⚙ 계정 관리] 에서 계정을 더하고 로그인하세요.');
+    list.appendChild(e);
+  }
+  if (keep) {
+    [...list.querySelectorAll('button.prow:not(:disabled)')]
+      .find(b => b.dataset.backend === keep.backend && b.dataset.account === keep.account)?.focus();
+  }
+}
+
+function swapPick(c) {
+  const id = SWAP?.id;
+  if (!id || !c.usable || SWAP?.loading || SWAP?.session?.error) return;
+  swapOpen(false);
+  wv?.postMessage({ t: 'tab.switch', id, backend: c.backend, account: c.account || '' });
+}
+
+$('sconf').addEventListener('click', () => { swapOpen(false); showConf(); });
+$('swap').addEventListener('mousedown', e => {
+  if (e.target === $('swap') && performance.now() - swapAt > 350) swapOpen(false);
+});
+$('swap').addEventListener('keydown', e => {
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    const rows = [...$('slist').querySelectorAll('button.prow:not(:disabled)')];
+    if (!rows.length) return;
+    const at = rows.indexOf(document.activeElement);
+    rows[e.key === 'ArrowDown' ? (at + 1) % rows.length : (at <= 0 ? rows.length - 1 : at - 1)].focus();
+  } else if (/^[1-9]$/.test(e.key)) {
+    const b = [...$('slist').querySelectorAll('button.prow')].find(x => x.dataset.key === e.key);
+    if (b && !b.disabled) { e.preventDefault(); b.click(); }
+  }
+});
+
+// ── 지난 대화 ────────────────────────────────────────
+let HIST = [];
+
+// **여닫는 길을 하나로 모은다.** 이 덮개가 떠 있는 동안은 브라우저 판을 숨겨야 하는데
+// (네이티브 창이라 HTML 위에 그려진다) 여닫는 곳이 넷이라 한 곳만 빠뜨려도
+// "이어하기를 눌렀는데 아무것도 안 뜬다" 가 된다.
+function histOpen(on) {
+  $('hist').classList.toggle('on', on);
+  layoutBrowsers();
+}
+
+$('resume').addEventListener('click', () => { histOpen(true); wv?.postMessage({ t: 'history.list' }); });
+$('hclose').addEventListener('click', () => histOpen(false));
+$('hq').addEventListener('input', () => renderHist());
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { histOpen(false); pickOpen(false); swapOpen(false); } });
+
+function renderHist() {
+  const box = $('hlist');
+  box.replaceChildren();
+  const q = $('hq').value.trim().toLowerCase();
+  const rows = HIST.filter(h => !q ||
+    (h.cwd + ' ' + h.title + ' ' + h.folder).toLowerCase().includes(q));
+
+  $('hnote').textContent = rows.length
+    ? tr`${rows.length}개 — 한 줄을 누르면 그 대화를 새 탭에서 이어갑니다.`
+    : (HIST.length ? tr('거른 결과가 없습니다.') : tr('지난 대화를 찾지 못했습니다.'));
+
+  rows.forEach(h => {
+    const d = document.createElement('button');
+    d.className = 'hrow';
+    const c = document.createElement('span');
+    c.className = 'cli' + (h.backend === 'codex_cli' ? ' codex' : '');
+    // codex 는 계정마다 기록이 따로다 — 더 넣은 계정의 기록이면 그 이름을 붙인다(그 계정으로 열린다).
+    c.textContent = (h.cli || cliName(h.backend)) + (h.accountName ? '·' + h.accountName : '');
+    const ti = document.createElement('div');
+    ti.className = 'ti';
+    ti.textContent = h.title;
+    const mt = document.createElement('div');
+    mt.className = 'mt';
+    mt.textContent = `${h.when}  ·  ${h.cwd}`;
+    d.append(c, ti, mt);
+    d.title = h.cwd + '\n' + h.title;
+    d.addEventListener('click', () => {
+      histOpen(false);
+      wv?.postMessage({ t: 'tab.resume', backend: h.backend, cwd: h.cwd, sessionId: h.id, account: h.account || '' });
+    });
+    box.appendChild(d);
+  });
+}
+
+// ── 첨부 ─────────────────────────────────────────────
+// 파일은 **경로만** 보낸다 — 호스트가 읽는다. 브라우저가 읽어 base64 로 올리면
+// 큰 파일 하나에 메시지가 통째로 부풀고, 크기 제한·형식 판정도 두 곳에 생긴다.
+// 붙여넣기 이미지는 클립보드에만 있어 경로가 없으므로 data URL 로 보낸다.
+let atts = [];
+
+function renderAtts() {
+  const box = $('atts');
+  box.replaceChildren();
+  atts.forEach((a, i) => {
+    const d = document.createElement('div');
+    d.className = 'att';
+    if (a.kind === 'paste') {
+      const im = document.createElement('img');
+      im.src = a.dataUrl;
+      d.appendChild(im);
+    }
+    const n = document.createElement('span');
+    n.textContent = a.name;
+    d.appendChild(n);
+    if (a.size) {
+      const s = document.createElement('span');
+      s.className = 'sz';
+      s.textContent = (a.size / 1024).toFixed(0) + 'KB';
+      d.appendChild(s);
+    }
+    const x = document.createElement('button');
+    x.className = 'rm';
+    x.textContent = '×';
+    x.title = tr('첨부에서 뺍니다');
+    x.addEventListener('click', () => { atts.splice(i, 1); renderAtts(); });
+    d.appendChild(x);
+    box.appendChild(d);
+  });
+}
+
+/** 클립보드에서 이미지를 꺼내 첨부에 넣는다. 하나라도 넣었으면 true. */
+function grabImages(cd) {
+  let got = false;
+  for (const it of cd?.items || []) {
+    if (!it.type?.startsWith('image/')) continue;
+    const f = it.getAsFile();
+    if (!f) continue;
+    got = true;
+    const r = new FileReader();
+    r.onload = () => {
+      atts.push({ kind: 'paste', dataUrl: r.result, size: f.size,
+                  name: tr('붙여넣은 이미지 ') + (atts.filter(a => a.kind === 'paste').length + 1) });
+      renderAtts();
+    };
+    r.readAsDataURL(f);
+  }
+  return got;
+}
+
+$('attach').addEventListener('click', () => wv?.postMessage({ t: 'attach.pick' }));
+
+// 영역 캡처. **고르는 일은 호스트가 한다** — 브라우저 안에서는 자기 창 밖을 볼 수 없어
+// 다른 창을 담을 수가 없다. 잘라 낸 그림은 붙여넣기와 같은 모양으로 돌아온다.
+$('snip').addEventListener('click', () => wv?.postMessage({ t: 'capture.region' }));
+
+// 이미지 붙여넣기. **캡처 → Ctrl+V 가 가장 흔한 사용 방식**이라 파일 저장을 요구하지 않는다.
+// 글자 붙여넣기는 가로채지 않는다 — textarea 가 알아서 한다.
+$('input').addEventListener('paste', e => { if (grabImages(e.clipboardData)) e.preventDefault(); });
+
+// ── 오른쪽 버튼 차림표 ───────────────────────────────
+// **앱 껍데기에는 브라우저 기본 차림표를 끄고 있다**(AreDefaultContextMenusEnabled=false).
+// 새로고침·소스 보기 같은 것이 우리 UI 위에 뜨면 앱이 아니라 웹 페이지로 보이기 때문이다.
+// 그래서 필요한 것만 우리가 그린다 — 끄기만 하고 안 그리면 오른쪽 버튼이 죽은 버튼이 된다.
+//
+// 클립보드 **읽기는 호스트에 맡긴다.** navigator.clipboard.readText 는 권한을 따로 받아야
+// 하고, 거절당하면 예외도 없이 빈 값이 와서 "붙여넣기가 안 먹는다" 로만 보인다.
+
+const MENU = $('menu');
+
+function hideMenu() {
+  MENU.style.display = 'none';
+  MENU.replaceChildren();
+}
+
+/** items: {label, on, hint?, off?} · {sep:true} · 거짓값은 건너뛴다(조건부 항목을 그대로 늘어놓게). */
+function showMenu(x, y, items) {
+  MENU.replaceChildren();
+  items.filter(Boolean).forEach(it => {
+    if (it.sep) {
+      const s = document.createElement('div');
+      s.className = 'sep';
+      MENU.appendChild(s);
+      return;
+    }
+    const b = document.createElement('button');
+    b.textContent = it.label;
+    if (it.hint) {
+      const k = document.createElement('span');
+      k.className = 'k';
+      k.textContent = it.hint;
+      b.appendChild(k);
+    }
+    b.disabled = !!it.off;
+    if (!it.off) b.addEventListener('click', () => { hideMenu(); it.on(); });
+    MENU.appendChild(b);
+  });
+
+  // 자리를 잡기 전에 크기를 재야 한다. 지난번 자리에 둔 채로 재면 화면 밖으로 나간 만큼
+  // 크기가 잘려 나와, 아래쪽에서 부른 차림표가 화면을 벗어난다.
+  MENU.style.left = '0px';
+  MENU.style.top = '0px';
+  MENU.style.display = 'block';
+  const r = MENU.getBoundingClientRect();
+  MENU.style.left = Math.max(4, Math.min(x, innerWidth - r.width - 4)) + 'px';
+  MENU.style.top = Math.max(4, Math.min(y, innerHeight - r.height - 4)) + 'px';
+}
+
+// 닫는 길을 넉넉히 둔다. 한 번 뜬 차림표가 안 닫히면 그 아래를 아예 못 쓴다.
+document.addEventListener('mousedown', e => { if (!e.target.closest?.('#menu')) hideMenu(); }, true);
+document.addEventListener('keydown', e => { if (e.key === 'Escape') hideMenu(); }, true);
+window.addEventListener('blur', hideMenu);
+window.addEventListener('resize', hideMenu);
+document.addEventListener('scroll', hideMenu, true);
+
+// ── 클립보드 ─────────────────────────────────────────
+// 쓰기는 호스트를 거쳐도 그만이지만 읽기와 짝을 맞춰 둔다 — 한쪽만 호스트를 타면
+// 되는 경우와 안 되는 경우가 갈려 원인을 찾기 어려워진다.
+const clipCopy = text => { if (text) wv?.postMessage({ t: 'clip.copy', text }); };
+
+/** 붙여넣을 자리. 호스트가 클립보드를 읽어 돌려줄 때까지만 들고 있는다. */
+let pasteEl = null;
+
+function clipPaste(to, id, el) {
+  pasteEl = el || null;
+  wv?.postMessage({ t: 'clip.read', to, id: id || '' });
+}
+
+/** 글자 칸에 지금 커서 자리로 끼워 넣는다. 고른 것이 있으면 그것을 갈아 끼운다. */
+function insertAt(el, text) {
+  if (!el?.isConnected) return;
+  const a = el.selectionStart ?? el.value.length;
+  const b = el.selectionEnd ?? el.value.length;
+  el.value = el.value.slice(0, a) + text + el.value.slice(b);
+  const at = a + text.length;
+  el.setSelectionRange(at, at);
+  el.focus();
+  el.dispatchEvent(new Event('input', { bubbles: true }));   // 높이 자동 조절 등이 걸려 있다
+}
+
+const selectedIn = el => (el?.value ?? '').slice(el?.selectionStart ?? 0, el?.selectionEnd ?? 0);
+
+// ── 어디를 눌렀나 ────────────────────────────────────
+document.addEventListener('contextmenu', e => {
+  const el = e.target;
+  const at = sel => el.closest?.(sel);
+
+  const tabEl = at('.tab');
+  // 터미널을 글자 칸보다 먼저 본다 — xterm 은 안에 숨은 textarea 를 두기 때문에
+  // 순서를 바꾸면 터미널에서 오른쪽 버튼을 눌러도 입력칸 차림표가 뜬다.
+  const termEl = at('.xterm');
+  const field = at('input, textarea');
+  const logEl = at('#log');
+
+  let items = null;
+  if (tabEl?.dataset.id) items = tabMenu(tabEl.dataset.id);
+  else if (termEl) items = termMenu();
+  else if (field) items = fieldMenu(field);
+  else if (logEl) items = logMenu();
+  else {
+    const s = String(getSelection() || '');
+    if (s) items = [{ label: tr('복사'), hint: 'Ctrl+C', on: () => clipCopy(s) }];
+  }
+
+  if (!items) return;      // 줄 것이 없으면 아무 일도 안 한다(빈 상자를 띄우지 않는다)
+  e.preventDefault();
+  showMenu(e.clientX, e.clientY, items);
+});
+
+function fieldMenu(el) {
+  const has = () => el.selectionStart !== el.selectionEnd;
+  return [
+    { label: tr('잘라내기'), hint: 'Ctrl+X', off: !has(), on: () => {
+        clipCopy(selectedIn(el));
+        insertAt(el, '');
+      } },
+    { label: tr('복사'), hint: 'Ctrl+C', off: !has(), on: () => clipCopy(selectedIn(el)) },
+    { label: tr('붙여넣기'), hint: 'Ctrl+V', on: () => clipPaste('input', '', el) },
+    { sep: true },
+    { label: tr('전체 선택'), hint: 'Ctrl+A', on: () => { el.focus(); el.select(); } },
+    { label: tr('칸 비우기'), off: !el.value, on: () => {
+        el.value = '';
+        el.focus();
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+      } },
+  ];
+}
+
+function termMenu() {
+  const t = cur();
+  if (!t?.term) return null;
+  const s = t.term.getSelection?.() || '';
+  return [
+    // Ctrl+C 는 터미널에서 중단 신호이기도 하다 — 고른 것이 있을 때만 복사로 본다.
+    { label: tr('복사'), hint: 'Ctrl+Shift+C', off: !s, on: () => clipCopy(s) },
+    { label: tr('붙여넣기'), hint: 'Ctrl+V', on: () => clipPaste('term', t.id, null) },
+    { sep: true },
+    { label: tr('전체 선택'), on: () => t.term.selectAll?.() },
+    { label: tr('화면 지우기'), on: () => t.term.clear?.() },
+  ];
+}
+
+function logMenu() {
+  const all = $('log').innerText;
+  return [{ label: tr('기록 전체 복사'), off: !all, on: () => clipCopy(all) }];
+}
+
+function tabMenu(id) {
+  const t = tab(id);
+  if (!t) return null;
+  const web = t.kind === 'browser';
+  return [
+    { label: tr('이름 바꾸기'), hint: tr('더블클릭'), on: () => startRename(id) },
+    { label: tr('이름 되돌리기'), off: !t.alias, on: () => renameTab(id, '') },
+    { sep: true },
+    // 한도가 찬 계정에서 **같은 대화를 다른 계정·다른 CLI 로** 넘긴다. 로그인 탭에는 넘길 대화가 없다.
+    !web && !t.login && { label: tr('다른 CLI·계정으로 이어가기…'), hint: 'Claude · Codex · Antigravity',
+                          on: () => wv?.postMessage({ t: 'switch.list', id }) },
+    !web && !t.login && { sep: true },
+    web && { label: tr('주소 복사'), on: () => clipCopy(t.url) },
+    web && { label: tr('새로고침'), on: () => wv?.postMessage({ t: 'browser.nav', id, action: 'reload' }) },
+    !web && { label: tr('폴더 열기'), on: () => wv?.postMessage({ t: 'folder.open', path: t.cwd }) },
+    !web && { label: tr('폴더 경로 복사'), on: () => clipCopy(t.cwd) },
+    { sep: true },
+    { label: tr('닫기'), on: () => closeTab(id) },
+    { label: tr('다른 탭 모두 닫기'), off: TABS.size < 2,
+      on: () => [...TABS.keys()].filter(x => x !== id).forEach(closeTab) },
+  ];
+}
+
+// ── 탭 이름 바꾸기 ───────────────────────────────────
+// **탭 안에서 바로 고친다.** 창을 하나 더 띄우면 어느 탭을 고치는 중인지 흐려지고,
+// 탭이 여럿일 때는 엉뚱한 탭 이름을 바꿔 놓고도 모른다.
+let renaming = null;
+
+function startRename(id) {
+  if (!tab(id)) return;
+  renaming = id;
+  renderTabs();
+}
+
+function renameTab(id, name) {
+  const t = tab(id);
+  if (!t) return;
+  t.alias = name;                        // 화면은 먼저 바꾼다 — 호스트 답을 기다리면 굼떠 보인다
+  renaming = null;
+  renderTabs();
+  wv?.postMessage({ t: 'tab.rename', id, name });
+}
+
+// F2 로도 연다. 지금 보고 있는 탭이 대상이다.
+document.addEventListener('keydown', e => {
+  if (e.key !== 'F2' || confOn || !active) return;
+  if (e.target.closest?.('input, textarea, .xterm')) return;   // 글자를 치는 중이면 건드리지 않는다
+  e.preventDefault();
+  startRename(active);
+});
+
+// ── 전송 ─────────────────────────────────────────────
+function send() {
+  const t = cur();
+  if (!t) { log(tr('보낼 대화가 없습니다 — [＋ 새 대화] 로 여세요.'), 'w'); return; }
+  if (t.kind === 'browser') { log(tr('브라우저 탭에는 보낼 수 없습니다 — CLI 탭을 고르세요.'), 'w'); return; }
+
+  const box = $('input');
+  const text = box.value.trim();
+  // 첨부만 보내는 것도 한 턴이다 — "이 로그 봐줘" 에 본문이 없을 수 있다.
+  if (!text && atts.length === 0) return;
+  if (!t.live) { log(tr`${t.cli} 가 아직 안 떴거나 끝났습니다 — 탭을 닫고 다시 여세요.`, 'w'); return; }
+
+  wv?.postMessage({ t: 'term.send', id: t.id, text, attachments: atts });
+
+  box.value = '';
+  box.style.height = 'auto';
+  atts = [];
+  renderAtts();
+}
+$('send').addEventListener('click', send);
+
+$('input').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); }
+});
+// 줄 수에 맞춰 늘어난다. 여러 줄을 쓰는 일이 흔한데 한 줄 칸이면 쓴 것이 안 보인다.
+$('input').addEventListener('input', e => {
+  e.target.style.height = 'auto';
+  e.target.style.height = Math.min(e.target.scrollHeight, 180) + 'px';
+});
+
+// ── 설정 ─────────────────────────────────────────────
+// 목록도 검증도 **호스트의 표(CliCatalog)에서 온다.** 화면에 따로 적어 두면 반드시 어긋나고,
+// 어긋난 쪽은 "저장은 됐는데 CLI 가 인자를 거절해 터미널이 안 열린다" 로만 보인다.
+let CONF = null;
+const cat = b => CONF?.catalog?.[b] || {};
+
+/** 이 CLI·모델이 받는 추론 강도. codex 는 **모델마다 다르다** — 모델을 바꾸면 목록도 바뀐다. */
+function effortChoices(backend, model) {
+  const k = cat(backend);
+  const per = model && k.effortsByModel ? k.effortsByModel[model] : null;
+  return [''].concat(per || k.efforts || []);
+}
+
+/**
+ * 설정 [계정] 카드의 한 줄 — 이름 · 상태 · 단추. 기본 계정은 단추가 없다(로그인은 CLI 가 원래 하던 대로다).
+ * 지우기는 **두 번 누른다** — 로그인과 그 계정 폴더(codex 는 그 계정에서 이어간 기록까지)가 같이 지워진다.
+ */
+function accountRow(grid, a) {
+  const nm = document.createElement('div');
+  nm.className = 'an';
+  nm.textContent = a.id ? a.name : tr('기본');
+  nm.title = a.id ? tr`계정 번호 ${a.id}` : tr('CLI 에 원래 로그인해 둔 계정');
+
+  const info = document.createElement('div');
+  info.className = 'ai';
+  const st = document.createElement('span');
+  st.className = a.loggedIn ? 'ok' : 'no';
+  st.textContent = a.loggedIn ? '✔ ' : '✘ ';
+  info.appendChild(st);
+  if (a.email) {
+    const em = document.createElement('span');
+    em.className = 'em';
+    em.textContent = a.email + '  ';
+    info.appendChild(em);
+  }
+  if (a.login === 'sso' || a.login === 'console') {
+    const tag = document.createElement('span');
+    tag.className = 'em';
+    tag.textContent = a.login === 'sso' ? tr('[회사 SSO] ') : '[Console] ';
+    info.appendChild(tag);
+  }
+  info.append(tr(a.note || ''));
+  if (a.home) info.title = (a.backend === 'codex_cli' ? 'CODEX_HOME: ' : tr('설정 폴더(CLAUDE_CONFIG_DIR): ')) + a.home;
+
+  const ops = document.createElement('div');
+  ops.className = 'ao';
+  const op = (txt, title, fn) => {
+    const b = document.createElement('button');
+    b.className = 'btn';
+    b.textContent = txt;
+    b.title = title;
+    b.addEventListener('click', () => fn(b));
+    ops.appendChild(b);
+    return b;
+  };
+
+  grid.append(nm, info, ops);
+  if (!a.id) return;
+
+  const how = a.login === 'sso' ? 'claude auth login --sso' : a.login === 'console' ? 'claude auth login --console' : 'claude auth login';
+  op(a.loggedIn && a.mode !== 'token' ? tr('다시 로그인') : tr('로그인'), a.backend === 'claude_code'
+       ? tr`이 계정 폴더로 ${how} 를 엽니다 — 평소 하던 로그인 그대로입니다. 기본 계정의 로그인은 그대로 남습니다`
+       : tr('이 계정 폴더로 codex login 을 엽니다'),
+     () => wv?.postMessage({ t: 'account.login', id: a.id }));
+
+  // 대안: setup-token 의 1년짜리 토큰. 일반 로그인이 있으면 그쪽이 먼저라 이 칸은 대개 안 쓴다.
+  let tok = null;
+  if (a.backend === 'claude_code') {
+    const tokenButton = op(tr('토큰'), tr('대안 — claude setup-token 의 1년짜리 토큰으로 로그인합니다(추론 전용 · 일반 로그인이 있으면 그쪽이 먼저)'), () => {
+      if (tok) { tok.remove(); tok = null; return; }
+      tok = document.createElement('div');
+      tok.className = 'atok';
+      tok.dataset.tokenPanel = a.id;
+      const get = document.createElement('button');
+      get.className = 'btn';
+      get.textContent = tr('setup-token 열기');
+      get.title = tr('claude setup-token 을 열어 토큰을 받고, 화면에 찍히면 자동으로 저장합니다');
+      get.addEventListener('click', () => wv?.postMessage({ t: 'account.setuptoken', id: a.id }));
+      const inp = document.createElement('input');
+      inp.type = 'password';
+      inp.dataset.confDraft = 'token:' + a.id;
+      inp.placeholder = tr('또는 sk-ant-oat01-… 토큰 붙여 넣기');
+      inp.autocomplete = 'off';
+      const save = document.createElement('button');
+      save.className = 'btn act';
+      save.textContent = tr('저장');
+      const go = () => { if (inp.value.trim()) wv?.postMessage({ t: 'account.token', id: a.id, token: inp.value.trim() }); };
+      save.addEventListener('click', go);
+      inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); go(); } });
+      tok.append(get, inp, save);
+      ops.after(tok);
+      inp.focus();
+    });
+    tokenButton.dataset.tokenAccount = a.id;
+  }
+  if (a.home) op(tr('폴더'), a.backend === 'codex_cli' ? tr('이 계정의 CODEX_HOME 폴더를 엽니다')
+                                                  : tr('이 계정의 설정 폴더(CLAUDE_CONFIG_DIR)를 엽니다'),
+                 () => wv?.postMessage({ t: 'folder.open', path: a.home }));
+
+  op(tr('이름'), tr('계정 이름을 바꿉니다'), () => {
+    const inp = document.createElement('input');
+    inp.value = a.name;
+    inp.maxLength = 20;
+    nm.replaceChildren(inp);
+    inp.focus();
+    inp.select();
+    const done = () => {
+      const v = inp.value.trim();
+      if (v && v !== a.name) wv?.postMessage({ t: 'account.rename', id: a.id, name: v });
+      else nm.textContent = a.name;
+    };
+    inp.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); inp.blur(); }
+      else if (e.key === 'Escape') { e.stopPropagation(); inp.value = a.name; inp.blur(); }
+    });
+    inp.addEventListener('blur', done, { once: true });
+  });
+
+  op(tr('삭제'), tr('이 계정의 로그인과 계정 폴더를 지웁니다'), b => {
+    if (b.dataset.armed !== '1') {
+      b.dataset.armed = '1';
+      b.textContent = tr('정말 지울까요?');
+      b.classList.add('on');
+      setTimeout(() => { if (b.isConnected) { b.dataset.armed = ''; b.textContent = tr('삭제'); b.classList.remove('on'); } }, 4000);
+      return;
+    }
+    wv?.postMessage({ t: 'account.remove', id: a.id });
+  });
+}
+
+function updateAntigravityModelOptions() {
+  if (!CONF) return;
+  const select = $('ag-model');
+  if (!select) return;
+  const k = cat('antigravity_cli');
+  const value = CONF.settings[k.modelKey] || '';
+  const models = k.models || [];
+  select.replaceChildren();
+  const add = (id, name) => {
+    const option = document.createElement('option');
+    option.value = id; option.textContent = name; select.appendChild(option);
+  };
+  add('', tr('(CLI 기본값)'));
+  models.forEach(id => add(id, k.modelLabels?.[id] || id));
+  add('__custom_model__', tr('직접 입력…'));
+  const manual = select.dataset.manual === '1' || (value !== '' && !models.includes(value));
+  select.value = manual ? '__custom_model__' : value;
+  $('ag-model-custom').hidden = !manual;
+  $('ag-model-custom').value = value;
+  $('ag-model-status').textContent = CONF.modelsLoading ? tr('모델 목록을 불러오는 중…')
+    : tr(CONF.modelsError) || (models.length ? tr`${models.length}개 모델 · 설정을 열 때 자동 갱신` : tr('모델 목록을 불러오거나 직접 입력하세요.'));
+  $('ag-model-refresh').disabled = !!CONF.modelsLoading;
+}
+
+function renderConf() {
+  const box = $('conf');
+  box.replaceChildren();
+  if (!CONF) return;
+
+  const v = CONF.settings;
+
+  // 한 칸(라벨 + 입력)을 만든다. onChange 는 **CONF.settings 를 바로 고친다** —
+  // 화면에 안 보이는 값(다른 CLI 의 권한)까지 여기 남아 있어야 저장 때 안 사라진다.
+  const field = (grid, label, key, opt) => {
+    const l = document.createElement('label');
+    l.textContent = label;
+    let inp;
+    // 켜고 끄는 값. 체크상자가 아니라 목록이다 — 이 격자는 라벨+입력 두 칸이라
+    // 체크상자만 덩그러니 놓이면 무엇이 켜진 것인지 라벨을 되짚어야 한다.
+    if (opt.bool) {
+      inp = document.createElement('select');
+      // 켠 쪽·끈 쪽 글자는 항목마다 다르다. "표시/숨김" 을 로그인 설정에 그대로 쓰면
+      // 무엇이 켜진 것인지 라벨을 되짚어야 한다.
+      [['true', opt.on || tr('표시')], ['false', opt.off || tr('숨김')]].forEach(([val, txt]) => {
+        const o = document.createElement('option');
+        o.value = val; o.textContent = txt;
+        inp.appendChild(o);
+      });
+      inp.value = v[key] === false ? 'false' : 'true';
+    } else if (opt.choices) {
+      inp = document.createElement('select');
+      opt.choices.forEach(c => {
+        const o = document.createElement('option');
+        // 빈 값은 "안 건다" 는 뜻이다. 빈 칸으로 두면 고장인지 기본값인지 알 수 없다.
+        o.value = c; o.textContent = c === '' ? tr('(CLI 기본값)') : (opt.labels?.[c] || c);
+        inp.appendChild(o);
+      });
+      inp.value = opt.choices.includes(v[key]) ? v[key] : '';
+    } else {
+      inp = document.createElement('input');
+      inp.value = v[key] ?? '';
+      if (opt.hint) inp.placeholder = opt.hint;
+      // select 와 다르다. **목록에 없는 값도 넣을 수 있어야** 하는 항목용 —
+      // claude 는 별칭 말고 전체 모델 이름도 받으므로 목록이 전부가 아니다.
+      if (opt.list?.length) {
+        const dl = document.createElement('datalist');
+        dl.id = 'dl-' + key;
+        opt.list.forEach(x => { const o = document.createElement('option'); o.value = x; dl.appendChild(o); });
+        grid.parentElement.appendChild(dl);   // 격자 자식이 되면 칸 하나를 먹어 뒤가 밀린다
+        inp.setAttribute('list', dl.id);
+      }
+    }
+    inp.addEventListener((opt.bool || opt.choices) ? 'change' : 'input', () => {
+      v[key] = opt.bool ? inp.value === 'true' : inp.value;
+      if (opt.rerender) renderConf();
+    });
+    grid.append(l, inp);
+    return inp;
+  };
+
+  const card = title => {
+    const d = document.createElement('div');
+    d.className = 'card';
+    d.innerHTML = `<div class="h">${esc(title)}</div>`;
+    const g = document.createElement('div');
+    g.className = 'grid';
+    d.appendChild(g);
+    box.appendChild(d);
+    return g;
+  };
+
+  const note = (grid, text) => {
+    const n = document.createElement('div');
+    n.className = 'note';
+    n.textContent = text;
+    grid.parentElement.appendChild(n);
+  };
+
+  // ── 새 대화 ────────────────────────────────────────
+  const languageGrid = card(tr('화면 언어'));
+  const languageLabel = document.createElement('label');
+  languageLabel.htmlFor = 'ui-language'; languageLabel.textContent = tr('언어');
+  const languageSelect = document.createElement('select'); languageSelect.id = 'ui-language';
+  for (const [value, label] of [['ko', '한국어'], ['en', 'English']]) {
+    const option = document.createElement('option'); option.value = value; option.textContent = label;
+    languageSelect.appendChild(option);
+  }
+  languageSelect.value = UiLanguage.current;
+  languageSelect.addEventListener('change', () => {
+    const value = languageSelect.value;
+    v.UiLanguage = value;
+    applyLanguage(value);
+    wv?.postMessage({ t: 'conf.language', language: value });
+    $('ui-language')?.focus();
+  });
+  languageGrid.append(languageLabel, languageSelect);
+  note(languageGrid, tr('언어는 즉시 적용하고 자동으로 저장합니다.'));
+
+  // **여기서 CLI 를 고르지 않는다.** 어느 CLI 로 열지는 [＋ 새 대화] 를 누를 때마다 고른다.
+  // 여기 있는 것은 CLI 마다 "그 CLI 를 고르면 무엇을 걸고 뜰까" 다.
+  const g0 = card(tr('새 대화'));
+  note(g0, tr('어느 CLI 로 열지는 [＋ 새 대화] 를 누를 때마다 고릅니다.\n') +
+           tr('아래 CLI 별 값은 그 CLI 를 고른 대화에 걸립니다 — 이미 열려 있는 탭은 각자 시작할 때의 값으로 계속 돕니다.'));
+  g0.remove();              // 칸이 없는 카드다. 빈 격자가 남으면 제목과 글 사이만 벌어진다
+
+  // ── 계정 ───────────────────────────────────────────
+  // CLI 마다 계정을 여러 개 둔다. 한 계정의 한도가 차면 탭 오른쪽 버튼 [다른 계정으로 이어가기] 로 넘긴다.
+  // **여기 단추는 누르는 즉시 일어난다**(아래 [저장] 과 무관하다) — 로그인은 탭을 열어 하는 일이라
+  // 저장 단추에 묶어 둘 수가 없다.
+  const g7 = card(tr('계정'));
+  g7.className = 'accs';
+  const accs = CONF.accounts || [];
+  Object.keys(CONF.catalog).forEach(b => {
+    const k = cat(b);
+    const found = CONF.detect?.[b]?.found !== false;
+    const head = document.createElement('div');
+    head.className = 'acch';
+    head.textContent = k.display || b;
+    g7.appendChild(head);
+
+    if (k.supportsAccounts === false) {
+      const info = document.createElement('div');
+      info.className = 'note';
+      info.style.gridColumn = '1 / -1';
+      info.textContent = tr('CLI 에 로그인한 계정을 사용합니다. [＋ 새 대화] 에서 Antigravity 를 열어 로그인하세요.');
+      g7.appendChild(info);
+      return;
+    }
+
+    accs.filter(a => a.backend === b).forEach(a => accountRow(g7, a));
+
+    const add = document.createElement('div');
+    add.className = 'accadd';
+    const nm = document.createElement('input');
+    nm.dataset.confDraft = 'new-account:' + b;
+    nm.placeholder = tr('새 계정 이름 (예: 회사 · 개인)');
+    nm.maxLength = 20;
+    // claude 는 로그인 방식을 고른다 — claude auth login 의 세 갈래 그대로다.
+    let method = null;
+    if (b === 'claude_code') {
+      method = document.createElement('select');
+      method.dataset.confDraft = 'login-method:' + b;
+      [['', tr('claude.ai 계정 (Pro · Max · Team · Enterprise)')],
+       ['sso', tr('회사 SSO 로 로그인')],
+       ['console', tr('Console (API 과금)')]].forEach(([v, t]) => {
+        const o = document.createElement('option');
+        o.value = v; o.textContent = t;
+        method.appendChild(o);
+      });
+      method.title = tr('회사 계정: Team · Enterprise 는 claude.ai 계정(회사 이메일) 또는 회사 SSO, API 과금 계정은 Console');
+    }
+    const btn = document.createElement('button');
+    btn.className = 'btn act';
+    btn.textContent = tr`＋ ${k.display || b} 계정 추가`;
+    btn.disabled = !found;
+    btn.title = found ? tr('계정을 더하고 곧바로 로그인 탭을 엽니다') : tr('이 CLI 를 찾지 못해 계정을 더할 수 없습니다');
+    btn.addEventListener('click', () => {
+      wv?.postMessage({ t: 'account.add', backend: b, name: nm.value.trim(), login: method ? method.value : '' });
+      nm.value = '';
+    });
+    nm.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); btn.click(); } });
+    add.append(...[nm, method, btn].filter(Boolean));
+    g7.appendChild(add);
+  });
+  note(g7,
+    tr('한 계정의 사용 한도가 차면, 탭을 오른쪽 버튼으로 누르고 [다른 계정으로 이어가기] 에서 한도가 남은 계정을 고르세요. ') +
+    tr('같은 탭에서 대화가 이어집니다 — Claude Code · Codex · Antigravity 사이도 됩니다.\n') +
+    tr('• Claude Code 계정: [＋ 추가] 를 누르면 그 계정 폴더로 `claude auth login` 이 열립니다 — 평소 하던 로그인 그대로입니다. ') +
+    tr('회사 계정은 Team·Enterprise 면 claude.ai 계정(회사 이메일)이나 회사 SSO, API 과금 계정이면 Console 을 고르세요. ') +
+    tr('로그인은 그 계정 폴더에만 남고 기본 계정의 로그인은 그대로입니다. 대화 기록·플러그인·스킬·설정은 기본 계정과 같이 쓰고, ') +
+    tr('사용량도 읽힙니다. 승인 뒤 코드가 보이면 로그인 탭의 "Paste code here" 에 붙여 넣으세요. ') +
+    tr('[토큰] 은 대안(setup-token 1년 토큰 · 추론 전용)입니다.\n') +
+    tr('• Codex 계정: [＋ 추가] 를 누르면 그 계정 폴더로 `codex login` 이 열립니다. 계정마다 폴더(CODEX_HOME)가 따로고, ') +
+    tr('기본 계정의 config.toml · AGENTS.md · skills · plugins · 샌드박스 설정을 따라갑니다.\n') +
+    tr('• 로그인 페이지가 열린 브라우저가 이미 다른 계정으로 로그인돼 있으면 그 계정이 승인됩니다 — 먼저 로그아웃하거나 계정을 바꾸세요.\n') +
+    tr('• 같은 CLI 계정끼리는 같은 대화를 그대로 잇고(Claude), 그 밖에는 앞 대화를 받을 CLI 의 기록으로 옮겨 써서 이어갑니다. 원본은 그대로 남습니다.'));
+
+  // ── CLI 별: 모델 · 추론 강도 · 권한 ────────────────
+  // **CLI 마다 한 장씩, 둘 다 보인다.** 새 대화마다 CLI 를 고르므로 어느 쪽이든 쓰인다 —
+  // 한 장만 보이게 두면 안 보이는 쪽에 무엇이 걸려 있는지 고르기 전에는 알 수 없다.
+  // 칸 이름(ClaudeModel …)은 호스트의 표가 준다(modelKey · effortKey · perm[].key).
+  Object.keys(CONF.catalog).forEach(b => {
+    const k = cat(b);
+    const g = card(k.display || b);
+    if (b === 'antigravity_cli' && k.modelKey) {
+      const label = document.createElement('label');
+      label.textContent = tr('모델'); label.htmlFor = 'ag-model';
+      const wrap = document.createElement('div');
+      const select = document.createElement('select');
+      select.id = 'ag-model'; select.style.width = '100%';
+      select.setAttribute('aria-label', tr('Antigravity 모델'));
+      const custom = document.createElement('input');
+      custom.id = 'ag-model-custom'; custom.style.width = '100%'; custom.style.marginTop = '6px';
+      custom.setAttribute('aria-label', tr('Antigravity 모델 직접 입력'));
+      custom.placeholder = tr('모델 ID 또는 이름');
+      select.addEventListener('change', () => {
+        const manual = select.value === '__custom_model__';
+        select.dataset.manual = manual ? '1' : '';
+        custom.hidden = !manual;
+        if (manual) { custom.value = v[k.modelKey] || ''; custom.focus(); }
+        else { v[k.modelKey] = select.value; custom.value = select.value; }
+      });
+      custom.addEventListener('input', () => { v[k.modelKey] = custom.value; });
+      wrap.append(select, custom); g.append(label, wrap);
+      const statusRow = document.createElement('div'); statusRow.className = 'note';
+      const status = document.createElement('span'); status.id = 'ag-model-status';
+      const refresh = document.createElement('button');
+      refresh.id = 'ag-model-refresh'; refresh.className = 'btn'; refresh.textContent = tr('다시 불러오기');
+      refresh.style.marginLeft = '8px';
+      refresh.addEventListener('click', () => wv?.postMessage({ t: 'conf.models.refresh', path: v.AntigravityCliPath || '' }));
+      statusRow.append(status, refresh); g.parentElement.appendChild(statusRow);
+      updateAntigravityModelOptions();
+    } else if (k.modelKey && k.modelsComplete) {
+      // codex 는 목록을 자기가 준다(models_cache.json). 없는 슬러그는 거절되므로 고르게만 한다.
+      field(g, tr('모델'), k.modelKey, { choices: [''].concat(k.models || []), rerender: true });
+    } else if (k.modelKey) {
+      // claude 는 별칭이 편의일 뿐이다. 전체 모델 이름도 받으므로 **직접 칠 수 있어야 한다.**
+      field(g, tr('모델'), k.modelKey, { list: k.models || [], hint: tr('비우면 CLI 기본 모델') });
+    }
+    if (k.effortKey) field(g, tr('추론 강도'), k.effortKey, { choices: effortChoices(b, v[k.modelKey]) });
+    (k.perm || []).forEach(f => field(g, tr(f.label), f.key, { choices: [''].concat(f.choices) }));
+
+    if (b === 'antigravity_cli') {
+      note(g, tr('모델·추론 강도를 비우면 Antigravity 에서 선택한 값을 사용합니다. CLI 의 /model, /settings 에서도 선택할 수 있습니다.\n') +
+        tr('권한을 비우면 CLI 설정을 따릅니다. sandbox 는 샌드박스 사용, dangerously-skip-permissions 는 도구 승인 생략입니다.\n') +
+        tr('지난 대화는 [↻ 이어하기] 또는 CLI 의 /resume, 사용량은 /usage 에서 확인합니다.'));
+      return;
+    }
+
+    const codex = b === 'codex_cli';
+    note(g, [
+      tr`작업 폴더의 ${k.memoryFile} 를 자동으로 읽습니다.`,
+      codex
+        ? (k.modelsComplete
+            ? tr('모델마다 받는 추론 강도가 다릅니다 — 모델을 바꾸면 추론 강도 목록이 따라 바뀝니다.\n') +
+              tr('모델 목록은 codex 가 캐시해 둔 것(models_cache.json)을 그대로 읽습니다.')
+            : tr('codex 의 모델 목록(models_cache.json)을 읽지 못했습니다 — 모델 이름을 직접 치세요.'))
+        : tr('별칭(opus · sonnet …) 말고 전체 모델 이름도 받습니다 — 목록에 없어도 칠 수 있습니다.'),
+      codex
+        ? tr('샌드박스(-s)와 승인(-a)은 별개 축입니다. 하나로 합쳐 두면 화면에 적힌 이름과 실제로 걸리는 플래그가 갈라집니다.')
+        : tr('권한은 --permission-mode 하나가 승인과 접근을 함께 정합니다.'),
+    ].join('\n'));
+  });
+
+  // ── 실행 파일 ──────────────────────────────────────
+  const g4 = card(tr('실행 파일'));
+  Object.keys(CONF.catalog).forEach(b => {
+    const key = cat(b).pathKey || ({ claude_code: 'ClaudeCliPath', codex_cli: 'CodexCliPath', antigravity_cli: 'AntigravityCliPath' })[b];
+    const d = CONF.detect?.[b] || {};
+    const inp = field(g4, cat(b).display || b, key, { hint: tr('비우면 자동 탐지') });
+
+    const wrap = document.createElement('div');
+    wrap.className = 'row2';
+    inp.replaceWith(wrap);
+    wrap.appendChild(inp);
+    const pick = document.createElement('button');
+    pick.className = 'btn';
+    pick.textContent = tr('찾아보기');
+    pick.addEventListener('click', () => wv?.postMessage({ t: 'cli.pick', which: b }));
+    wrap.appendChild(pick);
+
+    // **지금 무엇이 잡혔는지 보여 준다.** 빈 칸만 보이면 지정을 해야 하는지 아닌지
+    // 알 수가 없고, 안 뜰 때 어디를 봐야 할지도 모른다.
+    const l2 = document.createElement('label');
+    l2.textContent = '';
+    const det = document.createElement('div');
+    det.className = 'det' + (d.found ? '' : ' bad');
+    det.textContent = d.found
+      ? `✔ ${d.path}   (${d.source}${d.bypass ? tr(' · node 직접 호출') : ''})`
+      : `✘ ${tr(d.error) || tr('찾지 못했습니다')}`;
+    g4.append(l2, det);
+  });
+  note(g4, tr('경로를 비워 두면 자동으로 찾습니다. Codex 는 PowerShell 명령과 현재 설치 버전을 확인합니다.\n설정 파일: ') + CONF.file +
+           (CONF.version ? '\nLLM Tools ' + CONF.version : ''));
+
+  // ── 브라우저 바로가기(북마크) ──────────────────────
+  // 고정 세 칸(Jira · GitHub · GitLab)이 아니라 **목록이다.** 사내에는 Jira 가 여럿이고
+  // GitLab 이 프로젝트마다 다른 일이 흔한데, 고정 칸은 그때 "하나만 골라라" 가 된다.
+  const g5 = card(tr('브라우저 바로가기'));
+  g5.className = 'bm';                       // 이 카드만 격자가 넷이다(이름 · 주소 · 표시 · 손잡이)
+  const marks = (v.Bookmarks ||= []);
+
+  // 목록을 건드리면(추가·삭제·순서) 카드를 다시 그린다. **스크롤 자리를 붙잡아 둔다** —
+  // 안 그러면 아래쪽 줄을 지울 때마다 화면이 맨 위로 튀어 어디를 지웠는지 놓친다.
+  const redraw = () => { const y = box.scrollTop; renderConf(); box.scrollTop = y; renderSites(); };
+
+  if (marks.length) {
+    [tr('이름'), tr('주소'), '', ''].forEach(t => {
+      const h = document.createElement('div');
+      h.className = 'bmh';
+      h.textContent = t;
+      g5.appendChild(h);
+    });
+  }
+
+  marks.forEach((bm, i) => {
+    // 글자 칸은 다시 그리지 않는다 — 한 글자마다 카드를 새로 만들면 커서가 튄다.
+    // 값만 고치고 머리줄에 바로 비춘다(저장까지 기다리면 맞게 쳤는지 확인이 안 된다).
+    const nameIn = document.createElement('input');
+    nameIn.value = bm.Name ?? '';
+    nameIn.placeholder = tr('버튼에 찍힐 이름');
+    nameIn.maxLength = 40;
+    nameIn.addEventListener('input', () => { bm.Name = nameIn.value; renderSites(); });
+
+    const urlIn = document.createElement('input');
+    urlIn.value = bm.Url ?? '';
+    urlIn.placeholder = tr('예: https://회사이름.atlassian.net');
+    urlIn.addEventListener('input', () => { bm.Url = urlIn.value; renderSites(); });
+
+    // 켜고 끄기는 체크상자가 아니라 목록이다 — 무엇이 켜진 것인지 라벨을 되짚지 않아도 된다.
+    const show = document.createElement('select');
+    [['true', tr('표시')], ['false', tr('숨김')]].forEach(([val, txt]) => {
+      const o = document.createElement('option');
+      o.value = val; o.textContent = txt;
+      show.appendChild(o);
+    });
+    show.value = bm.Show === false ? 'false' : 'true';
+    show.addEventListener('change', () => { bm.Show = show.value === 'true'; renderSites(); });
+
+    const ops = document.createElement('div');
+    ops.className = 'bmops';
+    const op = (txt, title, on, off) => {
+      const b = document.createElement('button');
+      b.className = 'btn';
+      b.textContent = txt;
+      b.title = title;
+      b.disabled = !!off;
+      if (!off) b.addEventListener('click', on);
+      ops.appendChild(b);
+    };
+    // 순서가 곧 머리줄 순서다. 자주 쓰는 것을 앞으로 당길 길이 없으면 목록은 금방 못 쓰게 된다.
+    op('↑', tr('한 칸 앞으로'), () => { marks.splice(i - 1, 0, marks.splice(i, 1)[0]); redraw(); }, i === 0);
+    op('↓', tr('한 칸 뒤로'), () => { marks.splice(i + 1, 0, marks.splice(i, 1)[0]); redraw(); }, i === marks.length - 1);
+    op('×', tr('이 바로가기를 지웁니다'), () => { marks.splice(i, 1); redraw(); });
+
+    g5.append(nameIn, urlIn, show, ops);
+  });
+
+  if (!marks.length) {
+    // 빈 목록을 빈 칸으로 두지 않는다 — 설정이 고장 난 것처럼 보인다.
+    const e = document.createElement('div');
+    e.className = 'bmempty';
+    e.textContent = tr('바로가기가 없습니다. 아래에서 추가하세요.');
+    g5.appendChild(e);
+  }
+
+  // 추가 줄. 자주 쓰는 셋은 주소까지 채워 넣는다 — 매번 도메인을 외워 치게 두지 않는다.
+  //
+  // **개수를 여기서도 막는다.** 호스트도 MAX 에서 자르는데(MainWindow.ReadBookmarks),
+  // 화면이 안 막으면 넘치게 넣고 저장한 뒤에야 조용히 사라진 것을 보게 된다.
+  const MAX_MARKS = 30;
+  const full = marks.length >= MAX_MARKS;
+  const add = document.createElement('div');
+  add.className = 'bmadd';
+  const push = (nm, url) => { marks.push({ Name: nm, Url: url, Show: true }); redraw(); };
+  const addBtn = (cls, txt, title, fn) => {
+    const b = document.createElement('button');
+    b.className = cls;
+    b.textContent = txt;
+    b.title = full ? tr`바로가기는 ${MAX_MARKS} 개까지입니다` : title;
+    b.disabled = full;
+    if (!full) b.addEventListener('click', fn);
+    add.appendChild(b);
+  };
+  addBtn('btn act', tr('＋ 추가'), tr('빈 줄을 하나 만듭니다'), () => {
+    push('', '');
+    // 새로 생긴 줄의 이름 칸으로 커서를 보낸다 — 어디에 쳐야 하는지 찾게 두지 않는다.
+    box.querySelectorAll('.bm > input')[(marks.length - 1) * 2]?.focus();
+  });
+  addBtn('btn', 'Jira', tr('주소는 사내 것으로 고치세요'), () => push('Jira', tr('https://회사이름.atlassian.net')));
+  addBtn('btn', 'GitHub', tr('github.com 줄을 만듭니다'), () => push('GitHub', 'https://github.com'));
+  addBtn('btn', 'GitLab', tr('gitlab.com 줄을 만듭니다'), () => push('GitLab', 'https://gitlab.com'));
+  if (full) {
+    const cap = document.createElement('span');
+    cap.className = 'note';
+    cap.style.marginTop = '0';
+    cap.textContent = tr`바로가기는 ${MAX_MARKS} 개까지입니다 — 머리줄은 탭띠와 자리를 나눠 씁니다.`;
+    add.appendChild(cap);
+  }
+  g5.parentElement.appendChild(add);
+
+  note(g5, tr('웹 브라우저 북마크와 같습니다 — 원하는 만큼 넣고 지우세요. **적은 순서 그대로** 머리줄에 붙습니다.\n') +
+           tr('[숨김] 으로 두면 주소는 그대로 두고 버튼만 사라집니다 — 안 쓰는 동안 주소까지 지우면 다시 켤 때 찾아서 또 쳐야 합니다.\n') +
+           tr('주소가 비어 있으면 [표시] 라도 버튼은 안 나옵니다 — 눌러도 갈 곳이 없는 버튼은 고장으로 보입니다.\n') +
+           tr('스킴(https://)은 안 쳐도 됩니다. 이름을 비우면 주소의 호스트가 이름이 됩니다.\n') +
+           tr('로그인은 브라우저 프로필에 남아 앱을 껐다 켜도 유지됩니다. 탭 안에서 Ctrl+F 찾기, Ctrl+휠 확대가 됩니다.'));
+
+  // ── 브라우저 로그인 ────────────────────────────────
+  // **왜 따로 있나.** WebView2 는 만료 시각이 있는 쿠키만 프로필에 남기고 세션 쿠키는
+  // 프로세스가 죽을 때 버린다 — 그래서 어떤 사이트는 그냥 유지되는데 어떤 사이트만
+  // 껐다 켤 때마다 로그아웃된다. 여기 켜 두면 그 세션 쿠키를 꺼내 뒀다 되돌린다.
+  const g6 = card(tr('로그인'));
+  field(g6, tr('Claude 로그인 지키기'), 'GuardClaudeLogin', { bool: true, on: tr('지킴'), off: tr('안 지킴') });
+  field(g6, tr('브라우저 로그인 유지'), 'KeepSignedIn', { bool: true, on: tr('유지함'), off: tr('유지 안 함') });
+  field(g6, tr('비밀번호 저장'), 'SavePasswords', { bool: true, on: tr('저장함'), off: tr('저장 안 함') });
+
+  const clr = document.createElement('div');
+  clr.className = 'row2';
+  clr.style.gridColumn = '2';
+  const wipe = (txt, title, all) => {
+    const b = document.createElement('button');
+    b.className = 'btn';
+    b.textContent = txt;
+    b.title = title;
+    // **한 번 묻는다.** 되돌릴 수 없는 것을 한 번의 실수로 날리게 두지 않는다.
+    b.addEventListener('click', () => {
+      if (b.dataset.armed !== '1') {
+        b.dataset.armed = '1';
+        b.textContent = tr('정말 지울까요? (다시 누르기)');
+        b.classList.add('on');
+        setTimeout(() => {
+          if (b.dataset.armed !== '1') return;
+          b.dataset.armed = '';
+          b.textContent = txt;
+          b.classList.remove('on');
+        }, 4000);
+        return;
+      }
+      b.dataset.armed = '';
+      b.textContent = txt;
+      b.classList.remove('on');
+      wv?.postMessage({ t: 'signin.clear', all });
+    });
+    clr.appendChild(b);
+  };
+  wipe(tr('저장된 비밀번호 지우기'), tr('자동 저장된 비밀번호만 지웁니다'), false);
+  wipe(tr('로그인 전부 지우기'), tr('쿠키·사이트 저장소까지 지웁니다 — 모든 사이트에서 로그아웃됩니다'), true);
+  g6.append(document.createElement('label'), clr);
+
+  note(g6,
+    tr('[Claude 로그인 지키기] 는 ~/.claude.json 과 토큰이 성할 때 사본을 떠 두었다가, 켤 때 그것이 \n') +
+    tr('깨져 있으면 되돌립니다 — 탭마다 claude 를 하나씩 띄우는 앱이라 여러 프로세스가 같은 파일을 쓰다 \n') +
+    tr('잘리는 일이 실제로 있었고, 그때 화면에는 "로그인이 풀렸다" 로만 보입니다. \n') +
+    tr('사본은 이 Windows 계정에 묶여 암호화됩니다(DPAPI). \n\n') +
+    tr('[브라우저 로그인 유지] 는 세션 쿠키를 꺼내 뒀다가 다음에 켤 때 되돌립니다 — 이것이 없으면 \n') +
+    tr('세션 쿠키를 쓰는 사이트만(사내 SSO 등) 껐다 켤 때마다 로그아웃됩니다. 만료 시각이 있는 쿠키를 \n') +
+    tr('쓰는 곳(Jira 등)은 원래도 유지되므로 차이가 안 느껴집니다. \n') +
+    tr('**공용 PC 면 [유지 안 함] 으로 두세요** — 끄면 그 파일 자체가 안 생기고, 남아 있던 것도 지웁니다. \n') +
+    tr('[비밀번호 저장] 을 꺼도 이미 저장된 것은 안 지워집니다 — 지우려면 위 단추를 쓰세요.'));
+
+  // ── 저장 ───────────────────────────────────────────
+  const bar = document.createElement('div');
+  bar.style.cssText = 'display:flex;gap:8px;align-items:center;max-width:860px';
+  const save = document.createElement('button');
+  save.className = 'btn act';
+  save.textContent = tr('저장');
+  save.addEventListener('click', () => wv?.postMessage({ t: 'conf.save', v: CONF.settings }));
+  bar.appendChild(save);
+  const m = document.createElement('span');
+  m.className = 'note';
+  m.style.marginTop = '0';
+  m.textContent = tr('저장한 값은 다음에 여는 대화부터 적용됩니다.');
+  bar.appendChild(m);
+  box.appendChild(bar);
+}
+
+function applyLanguage(value) {
+  if (CONF) CONF.settings.UiLanguage = value === 'en' ? 'en' : 'ko';
+  if (!UiLanguage.set(value)) return;
+  renderTabs(); renderSites(); renderUsage(); renderAtts();
+  if (confOn) {
+    const scroll = $('conf').scrollTop;
+    const manual = $('ag-model')?.dataset.manual;
+    // Transient account/token drafts stay in memory and are never saved by a language change.
+    const drafts = new Map([...$('conf').querySelectorAll('[data-conf-draft]')].map(e => [e.dataset.confDraft, e.value]));
+    const panels = [...$('conf').querySelectorAll('[data-token-panel]')].map(e => e.dataset.tokenPanel);
+    renderConf();
+    for (const button of $('conf').querySelectorAll('[data-token-account]')) if (panels.includes(button.dataset.tokenAccount)) button.click();
+    for (const input of $('conf').querySelectorAll('[data-conf-draft]')) if (drafts.has(input.dataset.confDraft)) input.value = drafts.get(input.dataset.confDraft);
+    if ($('ag-model') && manual) { $('ag-model').dataset.manual = manual; updateAntigravityModelOptions(); }
+    $('conf').scrollTop = scroll;
+  }
+  if (pickIsOn()) renderPick();
+  if (swapIsOn()) renderSwap();
+  if ($('hist').classList.contains('on')) renderHist();
+  for (const t of TABS.values()) if (t.kind === 'browser') {
+    t.back.title = tr('뒤로'); t.fwd.title = tr('앞으로'); t.reload.title = tr('새로고침');
+    t.urlBox.placeholder = tr('주소를 넣고 Enter');
+  }
+  for (const line of $('log').children) line.textContent = line.dataset.time + '  ' + tr(line.dataset.message);
+  layoutBrowsers();
+}
+
+// ── 호스트 메시지 ────────────────────────────────────
+wv?.addEventListener('message', ev => {
+  const m = ev.data;
+  if (!m || typeof m !== 'object') return;
+
+  // 터미널 메시지는 **자기 탭에만** 그린다. 번호가 없거나 이미 닫힌 탭이면 버린다 —
+  // 아무 데나 그리면 옆 대화에 남의 출력이 섞인다.
+  if (typeof m.t === 'string' && m.t.startsWith('term.')) {
+    const t = tab(m.id);
+    if (!t) return;
+    switch (m.t) {
+      case 'term.out':
+        if (m.data) t.lastOutputAt = performance.now();
+        t.term?.write(m.data || '');
+        break;
+
+      // 준비가 배경에서 도는 동안 **먼저 오는 신호.** 이게 없으면 CLI 탐색·프로세스 기동이
+      // 끝날 때까지 화면이 비어 있어, 사용자는 멈춘 줄 안다.
+      case 'term.starting':
+        t.live = false; t.dead = false; renderTabs();
+        if (!m.again) t.term?.write(tr`\r\n\x1b[90m── ${m.cli || t.cli} 를 켜는 중입니다. 잠시만 기다리세요 ──\x1b[0m\r\n`);
+        break;
+
+      case 'term.ready':
+        t.live = true; t.dead = false; renderTabs();
+        t.lastOutputAt = performance.now();
+        // 붙자마자 현재 크기를 한 번 더 알린다 — 첫 start 는 xterm 이 자리를 잡기 전
+        // 크기로 나갈 수 있고, 그러면 첫 화면이 어긋난 채 그려진다.
+        setTimeout(() => { fitNow(t); if (t.id === active) t.term?.focus(); }, 50);
+        break;
+
+      case 'term.exit':
+        t.live = false; t.dead = true; renderTabs();
+        t.term?.write(tr`\r\n\x1b[90m── 터미널이 끝났습니다 (코드 ${m.code}) ──\x1b[0m\r\n`);
+        break;
+
+      case 'term.error':
+        t.live = false; t.dead = true; renderTabs();
+        t.term?.write(`\r\n\x1b[31m${(m.msg || '').replace(/\n/g, '\r\n')}\x1b[0m\r\n`);
+        break;
+    }
+    return;
+  }
+
+  switch (m.t) {
+    case 'tab.opened': addTab(m); break;
+
+    // 이것만 다른 데 안 적히던 말이라 기록으로 옮긴다 — 폴더 창을 닫았는데
+    // 아무 일도 안 일어나면 잘못 눌렀는지 고장인지 구별할 수 없다.
+    case 'tab.cancel':
+      log(tr('폴더 고르기를 취소했습니다 — 열려 있던 대화는 그대로입니다.'), 'i');
+      break;
+
+    // [＋ 새 대화] 의 답 — 고를 CLI 목록. 누른 것에 대한 답이므로 받자마자 연다.
+    // 이미 떠 있으면(두 번 누름) 목록만 갈고 초점을 다시 잡는다 — 다시 그리면 초점이 사라진다.
+    case 'newchat':
+      PICK = { last: m.last || '', lastAccount: m.lastAccount || '', items: m.items || [] };
+      renderPick();
+      if (pickIsOn()) pickFocus();
+      else pickOpen(true);
+      break;
+
+    case 'history.loading':
+      HIST = [];
+      $('hlist').replaceChildren();
+      $('hnote').textContent = tr('지난 대화를 읽는 중…');
+      break;
+
+    case 'history':
+      HIST = m.items || [];
+      renderHist();
+      break;
+
+    case 'conf':
+      CONF = { settings: m.settings, catalog: m.catalog, detect: m.detect, file: m.file,
+               accounts: m.accounts || [], version: m.version || '', modelsPath: m.settings?.AntigravityCliPath || '' };
+      applyLanguage(m.settings?.UiLanguage || 'ko');
+      renderSites();
+      renderUsage();          // 탐지 결과·계정 목록이 바뀌면 사용량 줄에 설 계정도 바뀐다
+      if (confOn) renderConf();
+      break;
+
+    case 'ui.language':
+      applyLanguage(m.language);
+      break;
+
+    case 'conf.models.loading':
+      if (!CONF) break;
+      if (CONF.modelsPath !== m.path && CONF.catalog.antigravity_cli) {
+        CONF.catalog.antigravity_cli.models = [];
+        CONF.catalog.antigravity_cli.modelLabels = {};
+      }
+      CONF.modelsPath = m.path;
+      CONF.modelsRequest = m.request; CONF.modelsLoading = true; CONF.modelsError = '';
+      updateAntigravityModelOptions();
+      break;
+
+    case 'conf.models':
+      if (!CONF || m.request !== CONF.modelsRequest) break;
+      CONF.modelsLoading = false; CONF.modelsError = m.error || '';
+      if (!m.error && CONF.catalog.antigravity_cli) {
+        CONF.catalog.antigravity_cli.models = m.models || [];
+        CONF.catalog.antigravity_cli.modelLabels = m.modelLabels || {};
+      }
+      updateAntigravityModelOptions();
+      break;
+
+    // [다른 계정으로 이어가기] 의 답 — 넘길 곳 목록. 누른 것에 대한 답이므로 받자마자 연다.
+    case 'switch':
+      if (!tab(m.id)) break;
+      SWAP = { id: m.id, from: m.from || {}, items: m.items || [], session: m.session || null, loading: !!m.loading };
+      renderSwap();
+      if (swapIsOn()) swapFocus(); else swapOpen(true);
+      break;
+
+    // 넘길 대화(첫 발화 · 말 수). 목록보다 늦게 온다 — 큰 기록은 읽는 데 시간이 걸린다.
+    case 'switch.session':
+      if (SWAP?.id === m.id) { SWAP.session = m.session || null; SWAP.loading = false; renderSwap(); }
+      break;
+
+    // 넘기는 중 · 실패. 터미널에 한 줄 남긴다 — 기록 줄은 접혀 있어 안 보일 수 있다.
+    case 'switch.busy': {
+      const t = tab(m.id);
+      t?.term?.write(tr`\r\n\x1b[90m── ${m.to} 로 넘기는 중입니다… ──\x1b[0m\r\n`);
+      break;
+    }
+    case 'switch.failed': {
+      const t = tab(m.id);
+      t?.term?.write(tr('\r\n\x1b[33m── 넘기지 못했습니다 — 아래 [기록] 을 보세요. 이 탭은 그대로입니다. ──\x1b[0m\r\n'));
+      break;
+    }
+
+    // 넘겼다 — **같은 탭**을 새 CLI·계정으로 다시 띄운다. 이름·자리는 그대로 두고 터미널만 새로 그린다.
+    case 'tab.switched': {
+      const t = tab(m.id);
+      if (!t) break;
+      Object.assign(t, { backend: m.backend, cli: m.cli, memoryFile: m.memoryFile,
+                         account: m.account || '', accountName: m.accountName || '' });
+      t.live = false; t.dead = false;
+      t.lastOutputAt = performance.now(); t.lastWakeAt = 0;
+      try { t.term?.reset(); } catch {}
+      t.term?.write(tr`\x1b[90m── ${m.cli}${m.accountName ? tr` · '${m.accountName}' 계정` : tr(' · 기본 계정')} 으로 이어갑니다 ──\x1b[0m\r\n`);
+      renderTabs();
+      fitNow(t);
+      wv?.postMessage({ t: 'term.start', id: t.id, cols: t.term?.cols || 80, rows: t.term?.rows || 24,
+                        fresh: !!m.fresh, sessionId: m.sessionId || '' });
+      break;
+    }
+
+    // 계정 이름을 바꿨다 — 그 계정을 쓰는 탭 배지도 바꾼다.
+    case 'tab.account': {
+      const t = tab(m.id);
+      if (t) { t.accountName = m.accountName || ''; renderTabs(); }
+      break;
+    }
+
+    // 주소·제목·뒤로/앞으로. **매번 전부 온다** — 일부만 받아 화면이 나머지를 캐시하면
+    // 어느 쪽이 최신인지 갈리고, 그 차이는 "뒤로 버튼이 안 살아난다" 로만 보인다.
+    case 'browser.state': {
+      const t = tab(m.id);
+      if (!t || t.kind !== 'browser') break;
+      t.url = m.url || '';
+      // 치는 중에 덮어쓰지 않는다 — 주소를 반쯤 고쳤는데 페이지가 넘어가면 글자가 사라진다.
+      if (t.urlBox && document.activeElement !== t.urlBox) t.urlBox.value = t.url;
+      if (t.back) t.back.disabled = !m.canBack;
+      if (t.fwd) t.fwd.disabled = !m.canForward;
+      if (m.title && m.title !== t.name) { t.name = m.title; renderTabs(); }
+      break;
+    }
+
+    // 페이지가 스스로 닫으려 한다(window.close). 탭 닫기와 같은 길로 보낸다.
+    case 'tab.closed': closeTab(m.id); break;
+
+    // 호스트가 그 탭을 띄워 달라고 한다(캡처 전에 온다 — 화면에 없는 탭은 못 찍는다).
+    case 'tab.show': if (tab(m.id)) showTab(m.id); break;
+
+    // 호스트가 고른 파일들. 경로만 들고 있다가 전송 때 넘긴다.
+    case 'attach.picked':
+      (m.files || []).forEach(f => atts.push({ kind: 'file', path: f.path, name: f.name, size: f.size }));
+      renderAtts();
+      break;
+
+    // 잘라 낸 화면. 붙여넣은 이미지와 **같은 종류로 넣는다** — 미리보기·전송·저장이
+    // 전부 그 길을 이미 타고 있어 여기서 새로 만들 것이 없다.
+    case 'attach.captured':
+      atts.push({ kind: 'paste', capture: true, dataUrl: m.dataUrl, size: m.size,
+                  name: tr('캡처 ') + (atts.filter(a => a.capture).length + 1) });
+      renderAtts();
+      break;
+
+    // 호스트가 이름을 받아들였다. 화면은 이미 바꿔 뒀지만, 호스트가 다듬은 값
+    // (앞뒤 공백·길이 자르기)으로 맞춰 둔다 — 다음에 켤 때와 화면이 달라지면 안 된다.
+    case 'tab.renamed': {
+      const t = tab(m.id);
+      if (t) { t.alias = m.alias || ''; renderTabs(); }
+      break;
+    }
+
+    // 오른쪽 버튼 [붙여넣기] 의 답. 어디에 넣을 것이었는지는 호스트가 그대로 돌려준다.
+    case 'clip.text':
+      if (m.to === 'term') {
+        const t = tab(m.id);
+        // xterm 자신의 붙여넣기를 쓴다 — 대괄호 붙여넣기로 감싸 줘야 여러 줄이
+        // 한 줄씩 제출되지 않는다.
+        if (t?.term?.paste) t.term.paste(m.text);
+        else if (t) wv?.postMessage({ t: 'term.in', id: t.id, data: m.text });
+      } else {
+        insertAt(pasteEl, m.text);
+      }
+      pasteEl = null;
+      break;
+
+    // 글자가 없고 그림만 있는 클립보드. 터미널도 입력창도 그림은 못 받으므로 첨부로 보낸다.
+    case 'clip.image':
+      atts.push({ kind: 'paste', dataUrl: m.dataUrl, size: m.size,
+                  name: tr('붙여넣은 이미지 ') + (atts.filter(a => a.kind === 'paste').length + 1) });
+      renderAtts();
+      pasteEl = null;
+      break;
+
+    case 'cli.picked':
+      if (CONF) {
+        const key = cat(m.which).pathKey || ({ claude_code: 'ClaudeCliPath', codex_cli: 'CodexCliPath', antigravity_cli: 'AntigravityCliPath' })[m.which];
+        if (key) CONF.settings[key] = m.path;
+        renderConf();
+      }
+      break;
+
+    // 못 읽었으면 빈 목록이 온다 — 지난 값을 남겨 두면 로그아웃·망 끊김 뒤에도
+    // 옛 숫자를 사실인 양 계속 보여 준다.
+    case 'usage':
+      USAGE[ukey(m.backend, m.account)] = m.windows || [];
+      renderUsage();
+      if (swapIsOn()) renderSwap();     // 고르는 중에 잔량이 오면 바로 비춘다
+      break;
+
+    case 'log': log(m.msg, m.level); break;
+  }
+});
+
+// ── 시작 ─────────────────────────────────────────────
+syncEmpty();
+renderUsage();            // 첫 숫자가 오기 전에도 줄은 선다("읽는 중…") — 빈 자리는 고장과 구별이 안 된다
+wv?.postMessage({ t: 'ui.ready' });
+</script>
+</body>
+</html>
