@@ -1,13 +1,16 @@
-# 공개 준비 검토 / Public-release review
+# 공개 준비와 공개 기록 / Publication preparation and record
 
-Review date: **2026-10-10 (Asia/Seoul)**
-Reviewed source snapshot: **d1033d1ad64134503cfcddf010e1c8c043710cbc**
+Initial review date: **2026-10-10 (Asia/Seoul)**
+Initially reviewed source snapshot: **d1033d1ad64134503cfcddf010e1c8c043710cbc**
+Pre-publication source/history verified: **30a503e5194fe34f6cb667432b61760ec81d3128**
 Repository: **OnTechnologyCo/LLM_Tools**
-Status: **보류 / HOLD — release files are prepared; unresolved service-term and rights checks remain.**
+Status: **공개 / PUBLIC — published on 2026-10-10 by maintainer decision; unresolved service-term and rights checks remain.**
 
 ## 한국어
 
-### 수행한 점검
+2026-10-10 유지관리자의 공개 진행 요청에 따라 저장소를 공개로 전환했습니다. 비로그인 GitHub API에서 저장소 접근을 확인했으며, GitHub에서 프로젝트 라이선스를 MIT로 인식하는 것도 확인했습니다. 공개 결정은 아래 B1–B3의 해결이나 공급자 승인·권리 확인이 완료됐다는 뜻은 아닙니다. 해당 기능의 구현은 변경하지 않았습니다.
+
+### 초기 기술 점검
 
 | 항목 | 결과·범위 |
 |---|---|
@@ -21,7 +24,7 @@ Status: **보류 / HOLD — release files are prepared; unresolved service-term 
 | 배포 고지 | 프로젝트 빌드·publish 출력에 LICENSE·외부 고지·licenses 포함. 설치본 준비 단계에서 누락 검사 |
 | 바이너리 공개 | 이번 변경으로 설치 파일·CLI 바이너리·런타임·사용자 계정을 공개하지 않음 |
 
-### 공개 전에 해결할 항목
+### 미해결 검토 항목
 
 **B1. Claude 구독 인증 자료를 앱이 백업·저장·중개하는 기능**
 
@@ -41,7 +44,7 @@ Status: **보류 / HOLD — release files are prepared; unresolved service-term 
 
 **B3. 자체 소스와 아이콘의 공개 권리 확인**
 
-- Git 작성자는 OnTechnologyCo이고 이력은 초기 import와 README 번역 변경입니다.
+- 최초 검토한 두 커밋의 작성자는 OnTechnologyCo이고, 해당 이력은 초기 import와 README 번역 변경입니다.
 - 이 정보만으로 회사·고객 계약, 외주 계약, 타인 소스의 사용 허가를 확인할 수 없습니다.
 - `src/LlmTools/app.ico`는 저장소의 유일한 이미지 자산입니다. 저장소에는 원 제작 출처·사용 허가 증빙이 없습니다.
 - **필요 조치:** 소유자가 자체 코드·문서·아이콘의 공개 및 MIT 제공 권한을 확인하십시오. 아이콘 출처가 불명확하면 권리가 확인된 자산으로 교체하십시오. 필요하면 법률 전문가와 계약을 확인하십시오.
@@ -50,23 +53,23 @@ Status: **보류 / HOLD — release files are prepared; unresolved service-term 
 
 이 문서는 기술적 점검의 기록이며 법률 의견, 특허 검색, 모든 코드의 독립 창작 증명 또는 “법적 문제가 절대로 없다”는 보증이 아닙니다. 원격에 없는 사용자 홈·실계정·운영 환경을 읽어 검사하지 않았습니다. 공급자 약관과 라이브러리 버전이 바뀌면 검토도 갱신해야 합니다.
 
-공개 시에는 README만이 아니라 소스와 전체 공개 Git 이력이 노출됩니다. 이번 작업에서는 저장소 공개 설정을 변경하지 않습니다. B1–B3의 해결 결과와 실제 배포물 고지 검증 후 공개 전환을 판단하십시오.
+현재 공개 저장소에는 README뿐 아니라 소스와 Git 이력도 포함됩니다. B1–B3는 미해결 검토 항목으로 남아 있으며, 문서와 고지를 추가한 사실이 해당 기능의 허가 또는 자체 자료의 권리를 증명하지는 않습니다.
 
 ## English
 
-Release documents and notices have been prepared, but publication remains **on hold**.
+The repository was made **public on 2026-10-10 at the maintainer's request**. Unauthenticated GitHub API access and GitHub's MIT license detection were verified. This publication decision does not establish that B1–B3 are resolved, provider permission was granted, or original rights were certified. The relevant implementation was not changed.
 
-The inspected remote history contained two commits. Gitleaks 8.30.1, downloaded with verified checksums, reported three candidates in the initial xterm.js bundle. They are minified map/cancellation/UTF-32 code, confirmed against the official npm distribution. No actual credentials were identified in that scope; this is not a guarantee against missed secrets.
+The initial source review covered two remote commits. The final pre-publication history check covered four commits through `30a503e5194fe34f6cb667432b61760ec81d3128`. Gitleaks 8.30.1, downloaded with verified checksums, reported three candidates in the initial xterm.js bundle. They are minified map/cancellation/UTF-32 code, confirmed against the official npm distribution. No actual credentials were identified in that scope; this is not a guarantee against missed secrets.
 
 Vendor assets were identified as `@xterm/xterm 6.0.0` and `@xterm/addon-fit 0.11.0` using verified npm SHA-512 integrity and content comparison after line-ending normalization. Full license files were added for those components and both declared NuGet dependencies. The WebView2 NuGet archive passed signature verification.
 
-Three unresolved publication checks remain:
+Three unresolved review items remain:
 
 1. **Claude credential handling:** `ClaudeAuthGuard` backs up/restores Claude credentials, and account/terminal/window code captures, stores, and injects setup tokens. [Anthropic's official guidance](https://code.claude.com/docs/en/legal-and-compliance) restricts third-party credential/session-token handling. Remove these paths in favor of provider-owned authentication, or establish an applicable permitted basis. This finding does not assert that hosting an unmodified official CLI in a normal terminal is prohibited.
 2. **Internal usage APIs:** `UsageProbe.ClaudeAsync` and `CodexAccountAsync` directly use local OAuth material with undocumented usage endpoints. Successful read-only access is not evidence of permission. Replace them with supported/official CLI mechanisms, or verify permission. No definitive legal conclusion about the OpenAI endpoint is claimed.
 3. **Original rights:** Git authorship does not prove employer/client permissions or asset provenance. The maintainer must confirm authority to publish/license the original code, documents, and `app.ico`. Replace an icon of uncertain provenance or obtain appropriate permission.
 
-This is a technical preparation record, not legal advice, a patent search, proof of independent creation, or a guarantee of legal safety. Local live accounts and profiles outside the repository were not inspected. Repository visibility remains unchanged until the unresolved checks are addressed.
+This is a technical preparation record, not legal advice, a patent search, proof of independent creation, or a guarantee of legal safety. Local live accounts and profiles outside the repository were not inspected. The repository is public by maintainer decision, and these checks remain unresolved. Publication and license notices do not establish provider permission or rights in the original materials.
 
 ## 준비 파일 검증 / Preparation validation
 
@@ -75,5 +78,6 @@ This is a technical preparation record, not legal advice, a patent search, proof
 - Project XML and installer PowerShell syntax: **passed**.
 - New documentation relative links and retained vendor file hashes: **passed**.
 - Both referenced NuGet archives: **signature verification passed**.
-- Full remote history re-scan: **no unresolved findings** after recording the reviewed initial-vendor false positives. No live credential was included in this report.
-- A public GitHub visibility change, installed application change, complete runtime behavioral test, installer release, and legal rights certification were **not performed**.
+- Final pre-publication history re-scan (four commits through `30a503e5194fe34f6cb667432b61760ec81d3128`): **no unresolved findings** after recording the reviewed initial-vendor false positives. No live credential was included in this report.
+- Repository visibility: **public**, changed on 2026-10-10 at the maintainer's request; unauthenticated repository access **passed**.
+- An installed application change, complete runtime behavioral test, installer release, and legal rights certification were **not performed**.

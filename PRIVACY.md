@@ -9,7 +9,7 @@
 - 캡처·붙여 넣은 이미지는 작업 폴더의 `.llmtools-attachments/`에 저장됩니다. Antigravity 이관 자료는 `.llmtools-handoff/`를 사용할 수 있습니다.
 - 입력·첨부를 CLI에 보내면 해당 CLI·모델 공급자의 약관·데이터 처리 조건이 적용됩니다. 조직·고객 자료를 전송할 권한은 사용자가 별도로 확인해야 합니다.
 - 브라우저 탭의 로그인 유지·비밀번호 저장 기능은 민감한 인증 자료를 저장할 수 있습니다. 같은 Windows 계정에서 복호화 가능한 저장 방식이 절대적인 보호를 보장하지는 않습니다.
-- 현재 구현에는 Claude 인증 백업·setup-token 저장과 Claude/Codex 내부 사용량 API 직접 조회가 있습니다. 공개 전 검토가 필요한 기능이며, 준수가 확인됐다는 주장으로 해석해서는 안 됩니다. [검토 기록](docs/PUBLIC_RELEASE_REVIEW.md)을 확인하십시오.
+- 현재 구현에는 Claude 인증 백업·setup-token 저장과 Claude/Codex 내부 사용량 API 직접 조회가 있습니다. 미해결 검토 항목에 해당하며, 공개됐다는 사실을 준수가 확인됐다는 주장으로 해석해서는 안 됩니다. [검토 기록](docs/PUBLIC_RELEASE_REVIEW.md)을 확인하십시오.
 
 지원 요청에는 익명화한 오류·버전·재현 단계만 제공하십시오. 인증 파일, 브라우저 프로필, 토큰 저장소, 대화 기록, 캡처 원본을 공개 저장소나 이슈에 올리지 마십시오.
 
@@ -21,6 +21,6 @@ App settings, tab state, and browser profiles live under the Windows user's `%LO
 
 Sending input or attachments to a CLI invokes its provider's terms and data practices. Verify permission to send employer/client materials. Browser login/password retention can store sensitive credentials; Windows-user-bound encryption is not an absolute security guarantee.
 
-The current implementation also contains Claude credential backup/setup-token storage and direct Claude/Codex internal usage API calls. These are unresolved pre-publication review items, not verified compliant integrations; see the [review](docs/PUBLIC_RELEASE_REVIEW.md).
+The current implementation also contains Claude credential backup/setup-token storage and direct Claude/Codex internal usage API calls. These remain unresolved review items; publication does not establish compliant integrations. See the [review](docs/PUBLIC_RELEASE_REVIEW.md).
 
 For support, share only sanitized errors, versions, and reproduction steps. Never publish authentication files, browser profiles, token vaults, transcripts, or original screenshots.

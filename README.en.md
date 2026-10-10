@@ -276,6 +276,6 @@ All permission choices were passed to installed CLIs. Claude accepted all six; *
 
 Original code and documentation use the [MIT License](LICENSE), allowing modification, commercial use, and redistribution while retaining notices. Third-party terms remain in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and [licenses/](licenses/).
 
-**Before public release:** the current Claude credential backup/storage and direct internal usage API calls require remediation or a verified permitted basis. Read the unresolved items in the [release review](docs/PUBLIC_RELEASE_REVIEW.md). Adding a license does not certify service-term compliance or legal safety.
+**Publication status:** the source was made public on 2026-10-10 at the maintainer's request. The current Claude credential backup/storage and direct internal usage API calls remain review items requiring remediation or a verified permitted basis. Read the unresolved items in the [release review](docs/PUBLIC_RELEASE_REVIEW.md). Publication or adding a license does not certify service-term compliance or legal safety.
 
 [Contributing](CONTRIBUTING.md) · [Security reporting](SECURITY.md) · [Legal and service terms](LEGAL.md) · [Local data and privacy](PRIVACY.md)

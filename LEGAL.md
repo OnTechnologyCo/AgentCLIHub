@@ -10,7 +10,7 @@ MIT의 무보증·책임 제한 문구가 모든 국가의 강행법규를 배�
 
 ### 권리 확인
 
-유지관리자는 최초 공개 전에 자체 코드·문서·`src/LlmTools/app.ico`를 공개하고 라이선스할 권한을 확인해야 합니다. 고용·외주·고객 계약이나 타인의 기여가 관련되면 해당 권리자의 허가·계약을 확인하십시오. 현재 Git 작성자 정보만으로 이런 계약의 유무를 확정할 수는 없습니다.
+유지관리자는 자체 코드·문서·`src/LlmTools/app.ico`를 공개하고 라이선스할 권한을 확인할 책임이 있습니다. 고용·외주·고객 계약이나 타인의 기여가 관련되면 해당 권리자의 허가·계약을 확인하십시오. 현재 Git 작성자 정보만으로 이런 계약의 유무를 확정할 수는 없습니다.
 
 ### 외부 도구와 인증
 
@@ -18,7 +18,7 @@ LLM Tools는 독립 프로젝트입니다. Anthropic, OpenAI, Google, Microsoft�
 
 공식 CLI는 사용자가 별도로 설치하고, 사용자가 권한을 가진 계정으로 공급자의 인증 절차를 완료해야 합니다. 이 저장소는 구독·계정·사용량을 제공하거나 외부 CLI·모델의 권리를 MIT로 부여하지 않습니다.
 
-공급자의 서비스 약관은 소스의 라이선스와 별개입니다. 특히 현재 구현의 Claude 토큰 백업·저장과 내부 API 사용량 조회에는 공개 전에 정리 또는 공급자 허용 여부의 확인이 필요합니다. 자세한 근거와 파일은 [공개 검토 기록](docs/PUBLIC_RELEASE_REVIEW.md)을 참조하십시오. 본 문서나 책임 제한 문구만으로 해당 기능의 준수 문제가 해소되지는 않습니다.
+공급자의 서비스 약관은 소스의 라이선스와 별개입니다. 특히 현재 구현의 Claude 토큰 백업·저장과 내부 API 사용량 조회에는 정리 또는 공급자 허용 여부의 확인이 필요한 미해결 항목이 남아 있습니다. 자세한 근거와 파일은 [공개 검토 기록](docs/PUBLIC_RELEASE_REVIEW.md)을 참조하십시오. 본 문서나 책임 제한 문구만으로 해당 기능의 준수 문제가 해소되지는 않습니다.
 
 참고:
 - [Claude Code legal and compliance](https://code.claude.com/docs/en/legal-and-compliance)
@@ -35,10 +35,10 @@ LLM Tools는 독립 프로젝트입니다. Anthropic, OpenAI, Google, Microsoft�
 
 Original project code and documentation use [MIT](LICENSE); preserve its copyright and license notices. Third-party components retain their [own terms](THIRD_PARTY_NOTICES.md). An “as is” disclaimer does not override mandatory law or grant rights in someone else's copyright, trademarks, patents, or contracts.
 
-Before initial publication, the maintainer must confirm authority to license the original source, documents, and `src/LlmTools/app.ico`, including any employer/client agreements or third-party contributions. Git authorship alone does not establish these rights.
+The maintainer is responsible for confirming authority to publish and license the original source, documents, and `src/LlmTools/app.ico`, including any employer/client agreements or third-party contributions. Git authorship alone does not establish these rights.
 
 LLM Tools is independent, without asserted endorsement by Anthropic, OpenAI, Google, or Microsoft. Product names describe compatibility; their marks remain with their owners. Users install official CLIs separately and complete provider-owned authentication with their own authorized accounts. This project grants no subscription, model, or external-service rights.
 
-Provider terms are separate from MIT. The existing Claude credential backup/storage and internal usage API integrations need remediation or a verified permitted basis before public release. [The review](docs/PUBLIC_RELEASE_REVIEW.md) identifies the code and sources. Documentation alone does not resolve those implementation concerns.
+Provider terms are separate from MIT. The existing Claude credential backup/storage and internal usage API integrations remain unresolved review items requiring remediation or a verified permitted basis. [The review](docs/PUBLIC_RELEASE_REVIEW.md) identifies the code and sources. Documentation alone does not resolve those implementation concerns.
 
 This preparation covers repository secret checks, notices for identified dependencies, and release documentation. It is not a legal opinion or a guarantee about authorship, patents, contracts, trademarks, privacy, or every jurisdiction. Obtain appropriate professional review where commercial distribution or rights remain uncertain.
