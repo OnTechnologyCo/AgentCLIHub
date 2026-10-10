@@ -1,4 +1,4 @@
-# LLM Tools 설치본 만들기.
+﻿# LLM Tools 설치본 만들기.
 #
 #   pwsh installer\build.ps1              # Release, win-x64, 자체 포함
 #   pwsh installer\build.ps1 -SkipPublish # 이미 publish 해 뒀을 때 설치본만 다시
@@ -51,7 +51,7 @@ if (-not $SkipPublish) {
 }
 
 # 셋 다 없으면 설치본이 조용히 반쪽이 된다 — 깔리고 나서야 드러나므로 여기서 막는다.
-foreach ($need in @('LlmTools.exe', 'web\index.html', 'agent\llmtools-browser.exe')) {
+foreach ($need in @('LlmTools.exe', 'web\index.html', 'agent\llmtools-browser.exe', 'LICENSE', 'THIRD_PARTY_NOTICES.md', 'licenses\xterm-6.0.0-MIT.txt', 'licenses\addon-fit-0.11.0-MIT.txt', 'licenses\WebView2-1.0.4078.44-LICENSE.txt', 'licenses\WebView2-1.0.4078.44-NOTICE.txt', 'licenses\ProtectedData-9.0.0-LICENSE.txt', 'licenses\ProtectedData-9.0.0-THIRD-PARTY-NOTICES.txt', 'licenses\component-provenance.json')) {
     if (-not (Test-Path (Join-Path $publish $need))) { throw "배포본에 $need 이(가) 없습니다." }
 }
 

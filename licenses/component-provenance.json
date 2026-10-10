@@ -1,0 +1,29 @@
+{
+    "reviewDate":  "2026-10-10",
+    "components":  [
+                       {
+                           "path":  "web/vendor/xterm.js",
+                           "package":  "@xterm/xterm",
+                           "version":  "6.0.0",
+                           "sha256":  "f68403f92e5552d69fab42d98571c8e16b6f03cba3e5233b4c8a99d3eb9d4653",
+                           "registryMetadata":  "https://registry.npmjs.org/@xterm/xterm/6.0.0",
+                           "verifiedContentMatch":  "identical after line-ending normalization"
+                       },
+                       {
+                           "path":  "web/vendor/xterm.css",
+                           "package":  "@xterm/xterm",
+                           "version":  "6.0.0",
+                           "sha256":  "df5c6a47028d56c50f5eb8e3c099a04afd76ad0a20554bac93f8eec55b61ca10",
+                           "registryMetadata":  "https://registry.npmjs.org/@xterm/xterm/6.0.0",
+                           "verifiedContentMatch":  "identical after line-ending normalization"
+                       },
+                       {
+                           "path":  "web/vendor/addon-fit.js",
+                           "package":  "@xterm/addon-fit",
+                           "version":  "0.11.0",
+                           "sha256":  "3f43135a129d65e79195b184ced2777262428946a758d2b0d17dcbcf875f2988",
+                           "registryMetadata":  "https://registry.npmjs.org/@xterm/addon-fit/0.11.0",
+                           "verifiedContentMatch":  "identical after line-ending normalization"
+                       }
+                   ]
+}

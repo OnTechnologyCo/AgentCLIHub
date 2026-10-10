@@ -26,3 +26,22 @@ __pycache__/
 *.pem
 *.pfx
 *.p12
+
+# User authentication, browser profiles, and private transcripts
+.claude/
+.codex/
+.llmtools-handoff/
+**/.credentials.json
+**/auth.json
+**/claude-auth.dat
+**/token.dat
+**/tokens.dat
+**/cookie-vault.dat
+**/password-vault.dat
+**/rollout-*.jsonl
+**/browser-profile/
+*.key
+*.p8
+# Private scanner reports
+gitleaks-report*.json
+secrets-*.json

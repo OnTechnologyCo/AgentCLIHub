@@ -271,3 +271,11 @@ All permission choices were passed to installed CLIs. Claude accepted all six; *
 - The npm Claude wrapper (`claude.cmd` → `node cli.js`) fallback: this PC had native `claude.exe` and did not take that path.
 - Real-conversation attachments (📎 or pasted images): implemented but not tried in an actual conversation.
 - Checks used **UI Automation/accessibility trees and PTY byte streams**, not visual inspection. Text/state/processes matched, but a person still needs to inspect colors, spacing, and other visible appearance.
+
+## Public release and licensing
+
+Original code and documentation use the [MIT License](LICENSE), allowing modification, commercial use, and redistribution while retaining notices. Third-party terms remain in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and [licenses/](licenses/).
+
+**Before public release:** the current Claude credential backup/storage and direct internal usage API calls require remediation or a verified permitted basis. Read the unresolved items in the [release review](docs/PUBLIC_RELEASE_REVIEW.md). Adding a license does not certify service-term compliance or legal safety.
+
+[Contributing](CONTRIBUTING.md) · [Security reporting](SECURITY.md) · [Legal and service terms](LEGAL.md) · [Local data and privacy](PRIVACY.md)

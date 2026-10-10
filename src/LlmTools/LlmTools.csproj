@@ -82,4 +82,13 @@
              Properties="Configuration=$(Configuration);RuntimeIdentifier=$(RuntimeIdentifier);SelfContained=$(SelfContained);PublishDir=$(PublishDir)agent\" />
   </Target>
 
+  <!-- 공개 소스와 배포본에 원문 라이선스·고지를 함께 제공한다. -->
+  <ItemGroup>
+    <Content Include="..\..\LICENSE" Link="LICENSE"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="..\..\THIRD_PARTY_NOTICES.md" Link="THIRD_PARTY_NOTICES.md"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="..\..\licenses\**\*.*" Link="licenses\%(RecursiveDir)%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>
