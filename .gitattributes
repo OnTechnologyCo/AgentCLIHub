@@ -1,0 +1,2 @@
+# Keep upstream license and notice files byte-for-byte.
+licenses/*.txt -text
