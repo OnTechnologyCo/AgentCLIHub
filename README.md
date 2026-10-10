@@ -1,5 +1,8 @@
 # LLM Tools
 
+**한국어** | [English](README.en.md)
+
+
 Claude Code CLI · OpenAI Codex CLI · Google Antigravity CLI 를 **탭으로 여러 개 띄워 쓰는 Windows 데스크톱 앱**이다.
 
 CLI 를 흉내 내지 않는다. ConPTY(가짜 콘솔)에 진짜 CLI 를 붙이고 그 화면을 xterm.js 로 그린다 —
