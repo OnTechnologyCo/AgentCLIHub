@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<title>LLM Tools</title>
+<title>Agent CLI Hub</title>
 <!-- xterm.js — **로컬 번들이다.** 이 창은 폐쇄망에서도 떠야 하므로 CDN 을 못 쓴다.
      web/vendor/ 에 넣고 csproj 가 출력 폴더로 복사한다. -->
 <link rel="stylesheet" href="vendor/xterm.css">
@@ -2016,7 +2016,7 @@ function renderConf() {
     g4.append(l2, det);
   });
   note(g4, tr('경로를 비워 두면 자동으로 찾습니다. Codex 는 PowerShell 명령과 현재 설치 버전을 확인합니다.\n설정 파일: ') + CONF.file +
-           (CONF.version ? '\nLLM Tools ' + CONF.version : ''));
+           (CONF.version ? '\nAgent CLI Hub ' + CONF.version : ''));
 
   // ── 브라우저 바로가기(북마크) ──────────────────────
   // 고정 세 칸(Jira · GitHub · GitLab)이 아니라 **목록이다.** 사내에는 Jira 가 여럿이고

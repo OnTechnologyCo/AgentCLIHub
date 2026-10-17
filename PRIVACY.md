@@ -4,7 +4,7 @@
 
 이 문서는 저장소에서 확인한 현재 구현을 설명합니다. 법률상 개인정보 처리방침을 대체하지 않으며, 사용자나 배포자가 운영하는 서버·조직의 실제 데이터 처리를 보증하지 않습니다.
 
-- 앱 설정·탭 상태·브라우저 프로필은 Windows 사용자의 `%LOCALAPPDATA%\LlmTools` 아래에 저장됩니다.
+- 앱 설정·탭 상태·브라우저 프로필은 Windows 사용자의 `%LOCALAPPDATA%\AgentCLIHub` 아래에 저장됩니다.
 - CLI 대화 기록·로그인 상태는 각 CLI가 사용하는 홈·계정 폴더에 남습니다. 계정 전환·대화 이관은 해당 파일을 참조하거나 새 기록을 작성할 수 있습니다.
 - 캡처·붙여 넣은 이미지는 작업 폴더의 `.llmtools-attachments/`에 저장됩니다. Antigravity 이관 자료는 `.llmtools-handoff/`를 사용할 수 있습니다.
 - 입력·첨부를 CLI에 보내면 해당 CLI·모델 공급자의 약관·데이터 처리 조건이 적용됩니다. 조직·고객 자료를 전송할 권한은 사용자가 별도로 확인해야 합니다.
@@ -17,7 +17,7 @@
 
 This describes the inspected implementation, not a substitute for an operator-specific statutory privacy policy or a guarantee about third-party/organizational data processing.
 
-App settings, tab state, and browser profiles live under the Windows user's `%LOCALAPPDATA%\LlmTools`. CLI history/authentication remain in CLI homes and account folders; account changes and transcript transfers can read or write those records. Clipboard/capture images use `.llmtools-attachments/` in the working folder; Antigravity transfer material can use `.llmtools-handoff/`.
+App settings, tab state, and browser profiles live under the Windows user's `%LOCALAPPDATA%\AgentCLIHub`. CLI history/authentication remain in CLI homes and account folders; account changes and transcript transfers can read or write those records. Clipboard/capture images use `.llmtools-attachments/` in the working folder; Antigravity transfer material can use `.llmtools-handoff/`.
 
 Sending input or attachments to a CLI invokes its provider's terms and data practices. Verify permission to send employer/client materials. Browser login/password retention can store sensitive credentials; Windows-user-bound encryption is not an absolute security guarantee.
 

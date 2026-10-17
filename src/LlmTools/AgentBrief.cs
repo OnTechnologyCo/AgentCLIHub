@@ -292,7 +292,7 @@ public static class AgentBrief
     /// 사용자 폴더 이름까지 섞이는 경로로는 그것을 장담할 수 없다. 이스케이프하는 쪽이 어떤 본문에도 맞다.
     /// </summary>
     internal static string CodexConfig(string body) =>
-        Header + " `codex -p " + CodexProfile + "` 일 때만 읽힙니다. LLM Tools 는 developer_instructions 만 " +
+        Header + " `codex -p " + CodexProfile + "` 일 때만 읽힙니다. Agent CLI Hub 는 developer_instructions 만 " +
         "고쳐 쓰고, 그 아래에 codex 가 적은 설정(폴더 신뢰 · Windows 샌드박스 등)은 그대로 둡니다.\n" +
         "developer_instructions = \"\"\"\n" + TomlMultiline(body) + "\n\"\"\"\n";
 
@@ -331,7 +331,7 @@ public static class AgentBrief
         return $"""
             ## 이 세션에서 쓸 수 있는 브라우저
 
-            지금 이 CLI 는 LLM Tools 창의 탭 안에서 돌고 있다. 같은 창에 브라우저 탭이 있고,
+            지금 이 CLI 는 Agent CLI Hub 창의 탭 안에서 돌고 있다. 같은 창에 브라우저 탭이 있고,
             사용자가 Jira·GitHub·GitLab 에 **이미 로그인해 둔 세션**을 그대로 쓴다.
             아래 명령으로 그 브라우저를 부릴 수 있다. 로그인·토큰을 따로 구할 필요가 없다.
 

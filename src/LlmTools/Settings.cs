@@ -310,8 +310,7 @@ public sealed class Settings
 
     // ── 저장 ────────────────────────────────────────────────────────────────
 
-    public static string DataDir =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LlmTools");
+    public static string DataDir => UpgradeMigration.DataDirectory; // 기존 데이터는 설치 단계에서 이전한다.
 
     public static string FilePath => Path.Combine(DataDir, "settings.json");
 

@@ -1,6 +1,6 @@
-# LLM Tools — 탭 중복 사고 수습.
+﻿# Agent CLI Hub — 탭 중복 사고 수습.
 #
-#   pwsh -File "D:\99. Temp\LLM_Tools\recover.ps1"
+#   pwsh -File ".\recover.ps1"
 #
 # 무엇이 있었나: 껍데기(index.html)가 다시 뜨면 ui.ready 가 또 오는데, 그때
 # RestoreTabs 가 무방비로 한 번 더 돌아 설정에 적힌 탭이 한 벌씩 더 생겼다.
@@ -8,13 +8,13 @@
 # 폴더에서 12개 떠 ~/.claude.json 을 동시에 쓰다 그 파일을 잘라 놓았다.
 # 그래서 "대화 이어서 하기" 를 누르면 로그인부터 다시 하라고 나온다.
 #
-# **LLM Tools 를 완전히 닫은 뒤에 실행하라.** 떠 있으면 닫을 때 지금 화면의
+# **Agent CLI Hub 를 완전히 닫은 뒤에 실행하라.** 떠 있으면 닫을 때 지금 화면의
 # 탭 목록(중복된 것)을 그대로 다시 써서 이 스크립트가 한 일이 지워진다.
 
 $ErrorActionPreference = 'Stop'
 
-if (Get-Process LlmTools -ErrorAction SilentlyContinue) {
-    Write-Host "LLM Tools 가 아직 떠 있습니다. 창을 닫고 다시 실행하세요." -ForegroundColor Red
+if (Get-Process -Name AgentCLIHub,LlmTools -ErrorAction SilentlyContinue) {
+    Write-Host "Agent CLI Hub 가 아직 떠 있습니다. 창을 닫고 다시 실행하세요." -ForegroundColor Red
     exit 1
 }
 
@@ -22,7 +22,7 @@ $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 
 # ── 1. 중복된 탭 목록 정리 ──────────────────────────────────────────────
 # 같은 탭(종류·주소·폴더·CLI 가 모두 같은 것)은 **처음 것만 남긴다.**
-$cfgPath = "$env:LOCALAPPDATA\LlmTools\settings.json"
+$cfgPath = "$env:LOCALAPPDATA\AgentCLIHub\settings.json"
 if (Test-Path $cfgPath) {
     Copy-Item $cfgPath "$cfgPath.dup-$stamp"
     $cfg = Get-Content $cfgPath -Raw | ConvertFrom-Json
@@ -66,5 +66,5 @@ if (-not (Test-Path $cand)) {
 }
 
 Write-Host ""
-Write-Host "다음: artifacts\setup\LlmTools-Setup-1.3.0.0.exe 를 설치하세요." -ForegroundColor Cyan
+Write-Host "다음: artifacts\setup 폴더의 최신 AgentCLIHub-Setup 설치 파일을 설치하세요." -ForegroundColor Cyan
 Write-Host "그 판부터는 껍데기가 다시 떠도 탭이 두 벌이 되지 않습니다." -ForegroundColor Cyan

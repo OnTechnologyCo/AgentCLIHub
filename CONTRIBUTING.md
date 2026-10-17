@@ -12,7 +12,7 @@
 - 변경의 목적, 사용자 동작, 확인한 결과를 PR에 설명하십시오. 동작을 바꿨다면 한국어·영어 README도 함께 갱신하십시오.
 - `git commit -s`로 기여의 출처를 확인하는 Signed-off-by를 남기십시오. [Developer Certificate of Origin 1.1](https://developercertificate.org/)에 동의할 수 있을 때만 사용하십시오. Git 커밋의 이름·이메일은 공개될 수 있으므로 GitHub noreply 주소도 사용할 수 있습니다.
 
-기본 빌드: Windows에서 `dotnet build LlmTools.sln`.
+기본 빌드: Windows에서 `dotnet build AgentCLIHub.sln`.
 호스트 검사: `dotnet run --project tests/HostChecks/HostChecks.csproj`.
 통합·UI 검사에는 필요한 도구와 격리 환경을 마련하고, 실제 사용자 계정이나 기존 프로필을 사용하지 마십시오. 수행하지 않은 검사는 수행했다고 적지 마십시오.
 
@@ -28,4 +28,4 @@ Never commit real keys, OAuth tokens, cookies, passwords, authentication files, 
 
 Explain the purpose, resulting behavior, and actual validation in your PR. Update both README languages for behavior changes. Use `git commit -s` only if you can certify your contribution under [DCO 1.1](https://developercertificate.org/). Commit identity may become public; a GitHub noreply address is acceptable.
 
-Build on Windows with `dotnet build LlmTools.sln`. Run host checks with `dotnet run --project tests/HostChecks/HostChecks.csproj`. Integration/UI checks need their required tools and isolated test profiles. Never use another person's live account or claim checks you did not run. Distribution, service access, and account use remain subject to their separate applicable terms.
+Build on Windows with `dotnet build AgentCLIHub.sln`. Run host checks with `dotnet run --project tests/HostChecks/HostChecks.csproj`. Integration/UI checks need their required tools and isolated test profiles. Never use another person's live account or claim checks you did not run. Distribution, service access, and account use remain subject to their separate applicable terms.

@@ -5,7 +5,7 @@ using System.Text.Json;
 namespace LlmTools.Cli;
 
 /// <summary>
-/// LLM Tools 창의 브라우저 탭을 부르는 도우미.
+/// Agent CLI Hub 창의 브라우저 탭을 부르는 도우미.
 ///
 /// **이 프로그램은 아무것도 안 한다** — 창구(<c>BrowserBridge</c>)에 말을 전하고 답을
 /// 그대로 찍는다. 판단은 전부 앱 쪽에 있다. 그래야 여기서 무엇을 보내든 앱이 정한 명령
@@ -28,6 +28,20 @@ internal static class Program
     {
         Console.OutputEncoding = Encoding.UTF8;
 
+        if (args.Length == 4 && args[0] == "--upgrade" && args[2] == "--report")
+        {
+            try
+            {
+                var result = LlmTools.UpgradeMigration.RunForCurrentUser(args[1]);
+                File.WriteAllText(args[3], result, new UTF8Encoding(true));
+                return 0;
+            }
+            catch (Exception ex)
+            {
+                File.WriteAllText(args[3], ex.Message, new UTF8Encoding(true));
+                return 10;
+            }
+        }
         if (args.Length == 0 || args[0] is "-h" or "--help" or "help")
         {
             Console.WriteLine(Usage);
@@ -53,7 +67,7 @@ internal static class Program
             // **이유를 정확히 말한다.** 여기서 뭉개면 에이전트는 명령이 틀린 줄 알고
             // 인자만 바꿔 가며 계속 다시 시도한다.
             Console.Error.WriteLine(
-                $"{PipeEnv} 가 없습니다 — 이 명령은 LLM Tools 창의 터미널 탭 안에서만 씁니다.");
+                $"{PipeEnv} 가 없습니다 — 이 명령은 Agent CLI Hub 창의 터미널 탭 안에서만 씁니다.");
             return 3;
         }
 
@@ -85,7 +99,7 @@ internal static class Program
         }
         catch (TimeoutException)
         {
-            Console.Error.WriteLine("LLM Tools 창이 응답하지 않습니다 — 창이 떠 있는지 확인하세요.");
+            Console.Error.WriteLine("Agent CLI Hub 창이 응답하지 않습니다 — 창이 떠 있는지 확인하세요.");
             return 4;
         }
         catch (UnauthorizedAccessException)
@@ -93,7 +107,7 @@ internal static class Program
             // 날것의 "Access to the path is denied." 로는 에이전트가 무엇을 바꿔야 할지 모른다.
             // 창구는 사용자 계정과 Codex 샌드박스 그룹에만 열려 있다(BrowserBridge.Security).
             Console.Error.WriteLine(
-                "LLM Tools 창구에 붙을 권한이 없습니다 — 이 계정(샌드박스)에는 창구가 열려 있지 않습니다. " +
+                "Agent CLI Hub 창구에 붙을 권한이 없습니다 — 이 계정(샌드박스)에는 창구가 열려 있지 않습니다. " +
                 "샌드박스 밖에서 실행하도록 사용자에게 승인을 받아 다시 실행하세요.");
             return 5;
         }
@@ -158,7 +172,7 @@ internal static class Program
     }
 
     private const string Usage = """
-        llmtools-browser — LLM Tools 창의 브라우저 탭을 부린다.
+        agentclihub-browser — Agent CLI Hub 창의 브라우저 탭을 부린다.
 
           tabs                      열려 있는 브라우저 탭 목록
           open <주소>               새 탭을 열고 번호를 돌려준다

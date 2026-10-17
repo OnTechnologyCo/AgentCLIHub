@@ -18,10 +18,12 @@
     <InvariantGlobalization>false</InvariantGlobalization>
     <NeutralLanguage>ko-KR</NeutralLanguage>
 
-    <AssemblyName>LlmTools</AssemblyName>
+    <AssemblyName>AgentCLIHub</AssemblyName>
     <RootNamespace>LlmTools</RootNamespace>
-    <Product>LLM Tools</Product>
-    <Version>1.7.0</Version>
+    <Product>Agent CLI Hub</Product>
+    <Title>Agent CLI Hub</Title>
+    <Description>Unified workspace for AI coding agent CLIs.</Description>
+    <Version>1.8.0</Version>
 
     <!-- 탐색기·작업 표시줄에 붙는 실행 파일 아이콘. -->
     <ApplicationIcon>app.ico</ApplicationIcon>
@@ -58,7 +60,7 @@
              CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
-  <!-- 에이전트용 도우미(llmtools-browser)를 같이 짓고 출력 폴더 agent\ 로 옮긴다.
+  <!-- 에이전트용 도우미(agentclihub-browser)를 같이 짓고 출력 폴더 agent\ 로 옮긴다.
        **경로가 정해져 있어야 한다** — 쪽지에 절대 경로로 적어 주기 때문이다
        (BrowserBridge.HelperPath). PATH 는 건드리지 않는다. -->
   <Target Name="BuildAgentHelper" AfterTargets="Build">

@@ -787,7 +787,7 @@ public static class TranscriptWriter
     /// 새 에이전트가 기록 속 도구 호출을 자기가 한 일로 알고, 이미 바뀐 파일을 옛 모습으로 믿는다.
     /// </summary>
     public static string Preface(Transcript t, string from) =>
-        $"[LLM Tools 인계] 이 대화는 {from} 에서 옮겨 왔다 — 이전 대화의 문맥을 이어간다.\n" +
+        $"[Agent CLI Hub 인계] 이 대화는 {from} 에서 옮겨 왔다 — 이전 대화의 문맥을 이어간다.\n" +
         "기록 속 [external_agent_tool_call] · [external_agent_tool_result] 는 이전 에이전트가 실제로 실행한 도구와 그 결과다. " +
         "그 뒤로 파일이 바뀌었을 수 있으니 필요하면 다시 확인하라.\n" +
         $"원본 기록: {t.SourcePath}";

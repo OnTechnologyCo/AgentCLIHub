@@ -1,4 +1,8 @@
-# LLM Tools
+# Agent CLI Hub
+
+**Unified workspace for AI coding agent CLIs**
+
+Run your coding agents in one place and carry conversations and work between them.
 
 [한국어](README.md) | **English**
 
@@ -19,7 +23,7 @@ The folder selected under **New conversation (＋ 새 대화)** is the **CLI's c
 |---|---|
 | Selected folder | Files the CLI reads/edits; it automatically reads `CLAUDE.md` (Claude) or `AGENTS.md` (Codex). |
 | Conversation history | **The CLI's own home**: `~/.claude/projects/<folder>/<session>.jsonl` or `$CODEX_HOME/sessions/<date>/rollout-*.jsonl`. |
-| App settings | `%LOCALAPPDATA%\LlmTools\settings.json`: open tabs, models, permissions, CLI paths, and bookmarks. |
+| App settings | `%LOCALAPPDATA%\AgentCLIHub\settings.json`: open tabs, models, permissions, CLI paths, and bookmarks. |
 
 **Pasted images and 📷 screen captures** are saved under `<folder>\.llmtools-attachments\`. Clipboard images have no path to send through stdin, and the CLI cannot read outside its working directory without `--add-dir`. Files selected with 📎 are passed by path without writing a copy.
 When **handing another CLI's conversation to Antigravity**, the app writes a handoff file under `<folder>\.llmtools-handoff\`. Keep it while using that conversation: tab restoration and later transfers use it too.
@@ -70,9 +74,9 @@ When an account's five-hour, weekly, or monthly limit is reached, transfer the c
 
 **Account storage differs by CLI.**
 
-- **Claude Code:** Each extra account gets a separate config directory: `CLAUDE_CONFIG_DIR=%LOCALAPPDATA%\LlmTools\accounts\<id>\`. Run normal `claude auth login` there. When adding an account, choose claude.ai subscription (Pro/Max/Team/Enterprise), company SSO (`--sso`), or Console API billing (`--console`). Only login files (`.credentials.json`, `.claude.json`) are separate; default authentication remains unchanged. **`projects` (history/automatic memory), `file-history`, `plugins`, `skills`, etc. are shared through junctions**. At launch, `settings.json` and `CLAUDE.md` are synchronized from the default folder. User-scope MCP servers are inside `.claude.json`; their list is supplied separately using `--mcp-config`. Only initial setup writes onboarding completion and the default account's trusted folders; thereafter only Claude writes that account's `.claude.json`. Full permissions allow usage queries. Alternatively use `claude setup-token`'s one-year inference-only token through `CLAUDE_CODE_OAUTH_TOKEN` under Token. Normal authentication takes priority when present.
+- **Claude Code:** Each extra account gets a separate config directory: `CLAUDE_CONFIG_DIR=%LOCALAPPDATA%\AgentCLIHub\accounts\<id>\`. Run normal `claude auth login` there. When adding an account, choose claude.ai subscription (Pro/Max/Team/Enterprise), company SSO (`--sso`), or Console API billing (`--console`). Only login files (`.credentials.json`, `.claude.json`) are separate; default authentication remains unchanged. **`projects` (history/automatic memory), `file-history`, `plugins`, `skills`, etc. are shared through junctions**. At launch, `settings.json` and `CLAUDE.md` are synchronized from the default folder. User-scope MCP servers are inside `.claude.json`; their list is supplied separately using `--mcp-config`. Only initial setup writes onboarding completion and the default account's trusted folders; thereafter only Claude writes that account's `.claude.json`. Full permissions allow usage queries. Alternatively use `claude setup-token`'s one-year inference-only token through `CLAUDE_CODE_OAUTH_TOKEN` under Token. Normal authentication takes priority when present.
 - **Company accounts:** Add Team/Enterprise through a claude.ai company email or SSO; add API-billed organizations through Console. Claude obeys managed `forceLoginMethod`/`forceLoginOrgUUID` policies on this PC. For example, `forceLoginMethod: console` blocks claude.ai login and setup-token.
-- **Codex:** `auth.json` cannot be replaced by an environment variable, so each account has a separate **`CODEX_HOME`**, also under `%LOCALAPPDATA%\LlmTools\accounts\<id>\`. On each launch, synchronize `config.toml` while retaining folders trusted only by that account, and synchronize `AGENTS.md`. Share `skills`, `plugins`, and sandbox directories (`.sandbox*`) through **junctions**. Separate sandboxes would make that account create a new sandbox, potentially changing the same Windows sandbox user's password and breaking the default account. **Never copy `auth.json`**: refresh on one side invalidates the other.
+- **Codex:** `auth.json` cannot be replaced by an environment variable, so each account has a separate **`CODEX_HOME`**, also under `%LOCALAPPDATA%\AgentCLIHub\accounts\<id>\`. On each launch, synchronize `config.toml` while retaining folders trusted only by that account, and synchronize `AGENTS.md`. Share `skills`, `plugins`, and sandbox directories (`.sandbox*`) through **junctions**. Separate sandboxes would make that account create a new sandbox, potentially changing the same Windows sandbox user's password and breaking the default account. **Never copy `auth.json`**: refresh on one side invalidates the other.
 
 **Conversation conversion (`Transcript.cs`)** never alters the original; it always creates a **new file with a new ID**. Tool calls are rendered as text using Codex's external-agent markers (`[external_agent_tool_call: X] … [/external_agent_tool_call]`). A preamble records origin, marker meanings, and source path.
 
@@ -110,9 +114,10 @@ The usage strip has one cell per account (`Claude`, `Claude·Company`, `GPT`, `G
 ## Run
 
 ```powershell
-cd "D:\99. Temp\LLM_Tools"
-dotnet build LlmTools.sln
-.\src\LlmTools\bin\Debug\net9.0-windows\LlmTools.exe
+git clone https://github.com/OnTechnologyCo/AgentCLIHub.git
+cd AgentCLIHub
+dotnet build AgentCLIHub.sln
+.\src\LlmTools\bin\Debug\net9.0-windows\AgentCLIHub.exe
 ```
 
 Build a distribution:
@@ -127,7 +132,7 @@ dotnet publish src\LlmTools\LlmTools.csproj -c Release -r win-x64 --self-contain
 
 | Path | Role |
 |---|---|
-| `LlmTools.sln` | Solution |
+| `AgentCLIHub.sln` | Solution |
 | `src/LlmTools/LlmTools.csproj` | Desktop project |
 | `App.xaml(.cs)` | Displays unhandled exceptions in a dialog |
 | `MainWindow.xaml(.cs)` | WebView2, tabs, Windows dialogs |
@@ -136,7 +141,7 @@ dotnet publish src\LlmTools\LlmTools.csproj -c Release -r win-x64 --self-contain
 | `CliLocator.cs` | PATH → conventional paths → PowerShell discovery; directly invokes Node for npm wrappers |
 | `CliCatalog.cs` | Sole model/effort/permission catalog and validation |
 | `SessionStore.cs` | Reads history, including Codex account homes |
-| `Settings.cs` | `%LOCALAPPDATA%\LlmTools\settings.json` |
+| `Settings.cs` | `%LOCALAPPDATA%\AgentCLIHub\settings.json` |
 | `TerminalHost.cs` | One PTY per tab; paste/send, output batching, account environment, login tabs/token parsing |
 | `Accounts.cs` | Account config/home preparation, synchronization/junctions, DPAPI tokens, safe deletion |
 | `Transcript.cs` | Reads CLI histories, writes target formats, finds a tab's current conversation |
@@ -150,7 +155,7 @@ dotnet publish src\LlmTools\LlmTools.csproj -c Release -r win-x64 --self-contain
 - Store independent fields (`ClaudeModel`, `ClaudeEffort`, `CodexModel`, `CodexEffort`). Sharing a field would send Claude's `opus` to `codex -m opus` and terminate it. Legacy settings with one backend/model/effort are migrated on first launch into the selected CLI's fields. The picker initially focuses that CLI, preserving an Enter-only workflow after updating.
 - **Permission axes differ:** Claude has `--permission-mode`; Codex has sandbox (`-s`) and approvals (`-a`). They remain separate so displayed settings match the real flags.
 
-- Claude and Codex both use the agent/browser bridge (`llmtools-browser.exe` ↔ named pipe). Codex runs with a **write-restricted sandbox token**, and elevated mode may use `CodexSandboxOffline/Online`. Pipe access is expanded only to the current user, `CodexSandboxUsers`, and **the current logon SID**. Every request must also carry `LLMTOOLS_BROWSER_TICKET`, freshly generated for each app launch and injected only into its terminals: outside Codex sessions may share the sandbox account/SID. Wrong tickets are rejected and logged as warnings.
+- Claude and Codex both use the agent/browser bridge (`agentclihub-browser.exe` ↔ named pipe). Codex runs with a **write-restricted sandbox token**, and elevated mode may use `CodexSandboxOffline/Online`. Pipe access is expanded only to the current user, `CodexSandboxUsers`, and **the current logon SID**. Every request must also carry `LLMTOOLS_BROWSER_TICKET`, freshly generated for each app launch and injected only into its terminals: outside Codex sessions may share the sandbox account/SID. Wrong tickets are rejected and logged as warnings.
 - Browser guidance is added through Claude's `--append-system-prompt-file` or Codex's `$CODEX_HOME/llmtools.config.toml` `developer_instructions` plus `-p llmtools`. This TOML basic string **must escape backslashes**. Through 1.4.0, `\P` in `C:\Program Files\…` broke Codex configuration loading.
 - **A new folder triggers the CLI's trust prompt.** Answer with arrows/Enter in the terminal; the app does not decide for you. Codex 0.155 asks even when `-a`/`-s` are supplied.
 - After granting folder trust, a PC without a chosen Windows sandbox can show **Set up sandbox**. Completing it overrides **that session's** permissions with Codex defaults (on-request/workspace-write), after the app's arguments. Close/reopen the tab to use configured permissions; the sandbox choice is retained. The first Codex tab on such a PC logs this explanation once.
@@ -199,7 +204,7 @@ All permission choices were passed to installed CLIs. Claude accepted all six; *
 
 - The helper ran under `codex sandbox` (elevated/unelevated): old 1.4.0 permissions produced access denied; corrected permissions passed. Token inspection identified restricted write tokens whose restricting list contained account/logon SID/Everyone rather than just groups.
 - Missing/wrong tickets were rejected inside and outside the sandbox, with warnings.
-- One **actual `codex exec`** read the guidance, ran `llmtools-browser.exe tabs` inside the sandbox (175 ms), and answered `FAKE-TAB-7Q`, confirming bridge/ticket environment reached the shell.
+- One **actual `codex exec`** read the guidance, ran `agentclihub-browser.exe tabs` inside the sandbox (175 ms), and answered `FAKE-TAB-7Q`, confirming bridge/ticket environment reached the shell.
 - The trimmed helper actually shipped in 1.4.1 gave the same result.
 
 **Account transfer (1.5.0), Claude 2.1.278 / Codex 0.155.0:**
@@ -279,3 +284,23 @@ Original code and documentation use the [MIT License](LICENSE), allowing modific
 **Publication status:** the source was made public on 2026-10-10 at the maintainer's request. The current Claude credential backup/storage and direct internal usage API calls remain review items requiring remediation or a verified permitted basis. Read the unresolved items in the [release review](docs/PUBLIC_RELEASE_REVIEW.md). Publication or adding a license does not certify service-term compliance or legal safety.
 
 [Contributing](CONTRIBUTING.md) · [Security reporting](SECURITY.md) · [Legal and service terms](LEGAL.md) · [Local data and privacy](PRIVACY.md)
+
+## 1.8.0 rename and automatic upgrades
+
+**Agent CLI Hub** is the new name of LLM Tools. Run `AgentCLIHub-Setup-1.8.0.0.exe` to upgrade;
+uninstalling the previous version first is unnecessary. The application is `AgentCLIHub.exe`.
+
+Before installation, Setup detects the installed path/version and checks settings and file locks.
+Accounts, preferences, and browser storage move from `%LOCALAPPDATA%\LlmTools` to
+`%LOCALAPPDATA%\AgentCLIHub`. File hashes and link targets are verified, then settings paths under
+the old root are converted. Existing encrypted data and authentication files retain their bytes and keys.
+
+The previous installation directory moves to the new location. After success, legacy executables,
+browser helper files, shortcuts, and temporary migration receipts are removed. No old data directory remains.
+Cancellation restores the original paths/settings; conflicting destinations and locked files stop the
+upgrade without overwriting user data. The original installer AppId avoids duplicate product registration.
+
+Existing project attachments, handoff files, and provider-owned conversation histories retain their
+references. Source namespaces/project directories named `LlmTools` and encryption identifiers are internal compatibility details.
+
+Run migration checks with `dotnet run --project tests/MigrationChecks/MigrationChecks.csproj -c Release`.

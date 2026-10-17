@@ -12,21 +12,40 @@ public partial class App : Application
     ///
     /// 이것이 없으면 설치·제거 중에 앱이 떠 있어도 아무 말이 없고, 잠긴 파일 때문에
     /// 설치가 반쯤 되다 만다 — 그때 화면에는 이유가 안 나온다.
-    /// installer\LlmTools.iss 의 <c>CheckForMutexes</c> 가 이 이름을 본다.
+    /// installer\AgentCLIHub.iss 의 <c>CheckForMutexes</c> 가 이 이름을 본다.
     /// </summary>
     private static System.Threading.Mutex? _running;
 
+    protected override void OnStartup(StartupEventArgs e)
+    {
+        try
+        {
+            UpgradeMigration.RunForCurrentUser("migrate", requireClosed: false);
+            UpgradeMigration.RunForCurrentUser("commit", requireClosed: false);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show("기존 설정을 이전하지 못했습니다. 원본 데이터는 보존됩니다.\n\n" + ex.Message,
+                "Agent CLI Hub — 데이터 이전", MessageBoxButton.OK, MessageBoxImage.Error);
+            Shutdown(1);
+            return;
+        }
+        try { _running = new System.Threading.Mutex(false, "AgentCLIHub.Running"); } catch { }
+        base.OnStartup(e);
+        MainWindow = new MainWindow();
+        MainWindow.Show();
+    }
     public App()
     {
         // 소유하지 않는다(createdNew 를 안 본다). 있는지만 보이면 되는 표식이다.
-        try { _running = new System.Threading.Mutex(false, "LlmTools.SingleInstance"); } catch { }
+
 
         // **어디서 터져도 사람이 읽을 수 있게 한다.** WPF 의 기본 동작은 미처리 예외에
         // 창을 통째로 닫는 것이고, 그러면 사용자에게는 "눌렀더니 앱이 사라졌다" 로만 남는다.
         // 여기서 잡아 이유를 보여 준다 — 터미널 하나 못 띄운 것으로 앱이 죽으면 안 된다.
         DispatcherUnhandledException += (_, e) =>
         {
-            MessageBox.Show(e.Exception.ToString(), UiText.Pick("LLM Tools — 처리하지 못한 오류", "LLM Tools — Unhandled error"),
+            MessageBox.Show(e.Exception.ToString(), UiText.Pick("Agent CLI Hub — 처리하지 못한 오류", "Agent CLI Hub — Unhandled error"),
                             MessageBoxButton.OK, MessageBoxImage.Error);
             e.Handled = true;
         };

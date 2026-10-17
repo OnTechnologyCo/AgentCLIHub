@@ -654,7 +654,7 @@ public sealed class TerminalHost : IDisposable
     public static string BrowserTicket { get; set; } = "";
 
     /// <summary>
-    /// 로그인 탭에만 심는 표시. 도우미(llmtools-browser)가 BROWSER 로 불려 주소를 열 때 이것이 있으면
+    /// 로그인 탭에만 심는 표시. 도우미(agentclihub-browser)가 BROWSER 로 불려 주소를 열 때 이것이 있으면
     /// InPrivate 탭으로 열어 달라고 한다(<c>open &lt;주소&gt; --private</c>).
     /// </summary>
     public const string PrivateBrowserEnv = "LLMTOOLS_BROWSER_PRIVATE";
@@ -666,7 +666,7 @@ public sealed class TerminalHost : IDisposable
         {
             ["TERM"] = "xterm-256color",
             ["COLORTERM"] = "truecolor",
-            ["TERM_PROGRAM"] = "LLM Tools",
+            ["TERM_PROGRAM"] = "Agent CLI Hub",
             ["TERM_PROGRAM_VERSION"] = ver,
             ["FORCE_HYPERLINK"] = "1",
 
@@ -678,7 +678,7 @@ public sealed class TerminalHost : IDisposable
             ["FORCE_COLOR"] = "3",      // 3 = truecolor
         };
 
-        // 브라우저 창구. 도우미(llmtools-browser)가 이 이름으로 우리를 찾는다.
+        // 브라우저 창구. 도우미(agentclihub-browser)가 이 이름으로 우리를 찾는다.
         // **이 앱이 띄운 터미널의 자식만** 물려받으므로, 밖에서 실행한 CLI 는 못 쓴다.
         if (BrowserPipeName.Length > 0)
         {

@@ -156,7 +156,7 @@ public sealed class BrowserHost : IDisposable
     /// 그 처리기는 페이지가 <c>window.close()</c> 를 부르면 **컨트롤을 품은 WPF 창을 닫는다**
     /// (<c>WebView2Base.CoreWebView2_WindowCloseRequested</c> → <c>_parentWindow.Close()</c>) — 창 하나에
     /// WebView2 하나를 두는 앱을 가정한 것이다. 이 앱은 탭이 전부 메인 창 안에 있어서, 로그인 팝업이 인증을
-    /// 마치고 스스로 닫히는 순간 **LLM Tools 창 전체가 닫힌다**(실측: 창의 Closing 이 우리 처리기보다 먼저 온다 —
+    /// 마치고 스스로 닫히는 순간 **Agent CLI Hub 창 전체가 닫힌다**(실측: 창의 Closing 이 우리 처리기보다 먼저 온다 —
     /// 컨트롤이 먼저 구독하기 때문이다). 그래서 떼어 내고, 닫기는 우리 처리기(그 탭만 닫기)가 받게 한다.
     ///
     /// 비공개 멤버를 찾아 떼므로 SDK 가 바뀌면 못 찾을 수 있다 — 그때는 기록만 남긴다. 메인 창의

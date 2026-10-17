@@ -1,4 +1,8 @@
-# LLM Tools
+# Agent CLI Hub
+
+**코딩 에이전트 CLI 통합 실행·관리 도구**
+
+여러 코딩 에이전트를 한곳에서 실행하고, 대화와 작업을 이어가세요.
 
 **한국어** | [English](README.en.md)
 
@@ -25,7 +29,7 @@ VS Code 통합 터미널과 같은 구조다. 그래서 슬래시 명령·플랜
 | --- | --- |
 | 고른 폴더 | CLI 가 파일을 읽고 고치는 대상. `CLAUDE.md`(Claude) · `AGENTS.md`(Codex) 를 자동으로 읽는다 |
 | 대화 기록 | **CLI 자신의 홈** — `~/.claude/projects/<폴더>/<세션>.jsonl` · `$CODEX_HOME/sessions/<날짜>/rollout-*.jsonl` |
-| 이 앱의 설정 | `%LOCALAPPDATA%\LlmTools\settings.json` (열어 둔 탭 목록·모델·권한·CLI 경로·바로가기) |
+| 이 앱의 설정 | `%LOCALAPPDATA%\AgentCLIHub\settings.json` (열어 둔 탭 목록·모델·권한·CLI 경로·바로가기) |
 
 입력창에 **이미지를 붙여넣거나 📷 로 화면을 캡처해 보낼 때** `<폴더>\.llmtools-attachments\` 에 그 이미지를 저장한다.
 클립보드 이미지는 경로가 없어 stdin 으로 못 보내고, CLI 는 자기 작업 폴더 **바깥** 파일은
@@ -132,7 +136,7 @@ Enter. 탭은 그대로(이름·자리·폴더) 두고 안의 CLI 만 갈아 끼
 | Antigravity → Claude Code / Codex | CLI가 남긴 텍스트 기록을 대상 CLI 기록 형식으로 옮긴 새 대화 | 인계받았던 대화와 이후 요청·답·도구 기록 |
 
 * **계정을 담는 곳이 CLI 마다 다르다.**
-  * Claude Code — 더 넣은 계정마다 **설정 폴더를 따로** 둔다(`CLAUDE_CONFIG_DIR` = `%LOCALAPPDATA%\LlmTools\accounts\<번호>\`).
+  * Claude Code — 더 넣은 계정마다 **설정 폴더를 따로** 둔다(`CLAUDE_CONFIG_DIR` = `%LOCALAPPDATA%\AgentCLIHub\accounts\<번호>\`).
     로그인은 그 폴더 안에서 **평소 하던 대로** `claude auth login` 을 한다 — claude.ai 구독(Pro·Max·Team·Enterprise),
     회사 SSO(`--sso`), Console API 과금(`--console`) 셋 중 계정을 더할 때 고른다. 로그인(`.credentials.json` · `.claude.json`)만
     따로고 기본 계정의 로그인은 그대로다. **`projects`(대화 기록·자동 메모리) · `file-history` · `plugins` · `skills` 등은 기본 폴더와
@@ -144,7 +148,7 @@ Enter. 탭은 그대로(이름·자리·폴더) 두고 안의 CLI 만 갈아 끼
     이 PC 에 회사가 관리 정책(`forceLoginMethod` · `forceLoginOrgUUID`)을 깔아 두었으면 claude 가 그것을 따른다 —
     예를 들어 `forceLoginMethod: console` 이면 claude.ai 로그인과 setup-token 이 막힌다.
   * Codex — 로그인(`auth.json`)을 환경변수로 대신할 길이 없어 계정마다 **홈(`CODEX_HOME`)을 따로** 둔다
-    (`%LOCALAPPDATA%\LlmTools\accounts\<번호>\`). 띄울 때마다 기본 홈에 맞춘다: `config.toml`(이 계정에서만 믿은
+    (`%LOCALAPPDATA%\AgentCLIHub\accounts\<번호>\`). 띄울 때마다 기본 홈에 맞춘다: `config.toml`(이 계정에서만 믿은
     폴더는 살림) · `AGENTS.md` 는 따라가고, `skills` · `plugins` · 샌드박스(`.sandbox*`)는 **연결(junction)로 같이 쓴다.**
     샌드박스를 따로 두면 그 계정의 codex 가 샌드박스를 새로 세우며 같은 Windows 사용자의 비밀번호를 바꿔 기본 계정 쪽이 막힌다.
     `auth.json` 은 절대 복사하지 않는다(한쪽이 갱신하면 다른 쪽 로그인이 죽는다).
@@ -204,9 +208,10 @@ Enter. 탭은 그대로(이름·자리·폴더) 두고 안의 CLI 만 갈아 끼
 ## 실행
 
 ```powershell
-cd "D:\99. Temp\LLM_Tools"
-dotnet build LlmTools.sln
-.\src\LlmTools\bin\Debug\net9.0-windows\LlmTools.exe
+git clone https://github.com/OnTechnologyCo/AgentCLIHub.git
+cd AgentCLIHub
+dotnet build AgentCLIHub.sln
+.\src\LlmTools\bin\Debug\net9.0-windows\AgentCLIHub.exe
 ```
 
 배포본을 만들려면:
@@ -228,8 +233,8 @@ dotnet publish src\LlmTools\LlmTools.csproj -c Release -r win-x64 --self-contain
 ## 파일 배치
 
 ```
-LLM_Tools\
-  LlmTools.sln
+AgentCLIHub\
+  AgentCLIHub.sln
   src\LlmTools\
     LlmTools.csproj
     App.xaml(.cs)            미처리 예외를 창으로 보여 준다
@@ -239,7 +244,7 @@ LLM_Tools\
     CliLocator.cs            PATH → 관례 경로 → PowerShell 탐지, npm 래퍼는 node 직접 호출
     CliCatalog.cs            모델·추론 강도·권한 목록과 검증 (표는 여기 한 벌뿐)
     SessionStore.cs          지난 대화 읽기 ([↻ 이어하기] 목록 — Codex 계정 홈까지)
-    Settings.cs              %LOCALAPPDATA%\LlmTools\settings.json
+    Settings.cs              %LOCALAPPDATA%\AgentCLIHub\settings.json
     TerminalHost.cs          탭 하나 = pty 하나. 붙여넣기 전송·출력 합치기 · 계정 환경 · 로그인 탭(토큰 읽기)
     Accounts.cs              계정 — Claude 계정 폴더 · Codex 계정 홈 준비(설정 맞추기·연결) · 토큰(DPAPI) · 안전한 삭제
     Transcript.cs            대화 옮기기 — 두 CLI 기록 읽기 · 받을 CLI 형식으로 쓰기 · 탭의 지금 대화 찾기
@@ -265,7 +270,7 @@ LLM_Tools\
 * **권한은 CLI 마다 축이 다르다.** Claude 는 `--permission-mode` 하나, Codex 는
   샌드박스(`-s`)와 승인(`-a`) 둘이다. 하나로 합치지 않았다 — 합치면 화면에 적힌 이름과
   실제로 걸리는 플래그가 갈라진다.
-* **탭 안의 에이전트가 브라우저를 부리는 창구**(`llmtools-browser.exe` ↔ 이름 있는 파이프)는
+* **탭 안의 에이전트가 브라우저를 부리는 창구**(`agentclihub-browser.exe` ↔ 이름 있는 파이프)는
   Claude·Codex 둘 다 쓴다. Codex 는 명령을 **쓰기 제한 토큰의 샌드박스**로 돌리므로(elevated 면
   `CodexSandboxOffline/Online` 이라는 다른 계정으로까지) 파이프를 그만큼만 더 연다 —
   나 · `CodexSandboxUsers` · **내 로그온 SID**. 대신 요청마다 **표**(`LLMTOOLS_BROWSER_TICKET`,
@@ -376,7 +381,7 @@ LLM_Tools\
     새 권한은 통과. 샌드박스 토큰을 직접 찍어 원인 확인(쓰기 제한 토큰 · 제한 목록에 그룹이 아니라
     계정·로그온 SID·Everyone 이 있음)
   * 표가 없거나 틀리면 샌드박스 안이든 밖이든 거절 + 앱 기록에 경고
-  * **실제 `codex exec` 한 번**: 모델이 쪽지를 읽고 샌드박스에서 `llmtools-browser.exe tabs` 를 돌려
+  * **실제 `codex exec` 한 번**: 모델이 쪽지를 읽고 샌드박스에서 `agentclihub-browser.exe tabs` 를 돌려
     (175ms) `FAKE-TAB-7Q` 로 답함 — 환경변수(창구 이름·표)가 Codex 의 셸까지 넘어가는 것도 이것으로 확인
   * 설치본(1.4.1)에 실제로 들어간 트리밍된 도우미로 같은 결과
 
@@ -523,3 +528,22 @@ LLM_Tools\
 **공개 상태:** 2026-10-10 유지관리자의 요청에 따라 소스를 공개했습니다. 현재 구현의 Claude 토큰 백업·저장과 내부 사용량 API 직접 호출에는 약관 검토·정리가 필요한 항목이 남아 있습니다. [공개 검토 기록](docs/PUBLIC_RELEASE_REVIEW.md)의 미해결 항목을 확인하십시오. 공개 결정이나 라이선스 파일 추가만으로 준수 또는 법적 무위험이 확인된 것은 아닙니다.
 
 [기여 안내](CONTRIBUTING.md) · [보안 제보](SECURITY.md) · [라이선스·서비스 조건](LEGAL.md) · [로컬 데이터·개인정보](PRIVACY.md)
+
+## 1.8.0 이름 변경 및 자동 업그레이드
+
+LLM Tools의 새 이름은 **Agent CLI Hub**입니다. 실행 파일은 `AgentCLIHub.exe`, 설치 파일은
+`AgentCLIHub-Setup-1.8.0.0.exe`입니다. 기존 버전을 따로 제거할 필요 없이 설치 파일을 실행합니다.
+
+설치 프로그램이 기존 설치 위치·버전과 설정 형식·파일 잠금을 먼저 확인합니다.
+`%LOCALAPPDATA%\LlmTools`의 계정·설정·브라우저 데이터를 `%LOCALAPPDATA%\AgentCLIHub`로 이전하고,
+파일 해시와 연결 대상을 확인한 뒤 설정 안의 해당 절대 경로를 변환합니다. 암호화 키와 인증 파일은 변경하지 않습니다.
+
+기존 설치 폴더는 새 설치 경로로 이동합니다. 설치 성공 후 이전 실행 파일·브라우저 도우미·바로가기와
+임시 이전 기록을 정리하며, 이전 데이터 폴더는 남기지 않습니다. 설치 취소 시 원래 경로와 설정으로 복원합니다.
+새 경로에 별도 데이터가 있거나 파일이 잠겨 있으면 덮어쓰지 않고 이유를 표시합니다.
+설치 AppId는 유지하므로 Windows에 중복 제품으로 등록하지 않습니다.
+
+프로젝트에 이미 저장된 첨부·대화 인계 파일과 외부 CLI의 대화 기록은 기존 참조를 보존합니다.
+소스의 `LlmTools` 네임스페이스·프로젝트 폴더명과 암호화 식별자는 내부 호환용입니다.
+
+이전 로직 검증: `dotnet run --project tests/MigrationChecks/MigrationChecks.csproj -c Release`

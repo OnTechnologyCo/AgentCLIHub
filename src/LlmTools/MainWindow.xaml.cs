@@ -90,7 +90,7 @@ public partial class MainWindow : Window
 
         // XAML 의 제목은 버전 없는 이름이다. 못 읽었으면 그대로 둔다 — 이름 뒤에
         // 빈 칸만 붙은 제목은 뭔가 깨진 것으로 보인다.
-        if (AppVersion.Length > 0) Title = $"LLM Tools {AppVersion}";
+        if (AppVersion.Length > 0) Title = $"Agent CLI Hub {AppVersion}";
 
         Loaded += OnLoaded;
         Closing += OnClosing;
@@ -166,7 +166,7 @@ public partial class MainWindow : Window
             MessageBox.Show(
                 UiText.Pick("WebView2 런타임을 시작하지 못했습니다.\n\nMicrosoft Edge WebView2 Runtime 이 설치되어 있어야 합니다.\n\n",
                     "Could not start WebView2.\n\nMicrosoft Edge WebView2 Runtime must be installed.\n\n") + ex.Message,
-                "LLM Tools", MessageBoxButton.OK, MessageBoxImage.Error);
+                "Agent CLI Hub", MessageBoxButton.OK, MessageBoxImage.Error);
             return;
         }
 
@@ -1222,7 +1222,7 @@ public partial class MainWindow : Window
             Accounts.SaveClaudeToken(accountId, token);
             var name = Accounts.Find(Settings.Load(), accountId)?.Name ?? accountId;
             Log($"'{name}' 계정의 토큰을 저장했습니다(암호화). 이제 그 계정으로 넘기거나 새 대화를 열 수 있습니다.", "i");
-            Post(new { t = "term.out", id = tabId, data = "\r\n[32m── LLM Tools: 토큰을 저장했습니다. 이 탭은 닫아도 됩니다. ──[0m\r\n" });
+            Post(new { t = "term.out", id = tabId, data = "\r\n[32m── Agent CLI Hub: 토큰을 저장했습니다. 이 탭은 닫아도 됩니다. ──[0m\r\n" });
             PostConf();
             RefreshUsage();
         }

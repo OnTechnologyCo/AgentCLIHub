@@ -17,7 +17,7 @@ namespace LlmTools;
 /// 탭 안에서 도는 CLI 가 브라우저 탭을 부릴 수 있게 열어 두는 창구.
 ///
 /// **왜 파이프인가.** CLI 는 ConPTY 안에서 돌고, 그 안에서 밖으로 말할 수 있는 것은
-/// 셸 명령뿐이다. 그래서 작은 도우미(<c>llmtools-browser.exe</c>)를 하나 두고,
+/// 셸 명령뿐이다. 그래서 작은 도우미(<c>agentclihub-browser.exe</c>)를 하나 두고,
 /// 그것이 이 파이프로 우리에게 말한다. MCP 로도 되지만 프로토콜을 한 벌 더 지고 가야 하고,
 /// 파이프 쪽은 **사람이 터미널에서 직접 쳐 볼 수 있어** 고장 났을 때 원인이 드러난다.
 ///
@@ -71,13 +71,13 @@ public sealed class BrowserBridge : IDisposable
 
     /// <summary>도우미 실행 파일. 지침에 절대 경로로 적어 준다 — PATH 를 건드리지 않는다.</summary>
     public static string HelperPath =>
-        Path.Combine(AppContext.BaseDirectory, "agent", "llmtools-browser.exe");
+        Path.Combine(AppContext.BaseDirectory, "agent", "agentclihub-browser.exe");
 
     public BrowserBridge(Func<string, string[], Task<object>> handle, Action<string, string> log)
     {
         _handle = handle;
         _log = log;
-        PipeName = "llmtools-browser-" + Environment.ProcessId;
+        PipeName = "agentclihub-browser-" + Environment.ProcessId;
     }
 
     public void Start() => _ = Task.Run(AcceptLoop);
@@ -201,7 +201,7 @@ public sealed class BrowserBridge : IDisposable
             {
                 _log($"브라우저 창구가 표가 맞지 않는 요청('{cmd}')을 거절했습니다 — 이 앱이 띄운 탭 밖에서 온 것입니다.", "w");
                 throw new UnauthorizedAccessException(
-                    $"표가 맞지 않습니다 — 이 명령은 LLM Tools 가 띄운 터미널 탭 안에서만 씁니다({TicketEnv}).");
+                    $"표가 맞지 않습니다 — 이 명령은 Agent CLI Hub 가 띄운 터미널 탭 안에서만 씁니다({TicketEnv}).");
             }
 
             var args = new List<string>();

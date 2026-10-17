@@ -26,10 +26,13 @@
     <TrimMode>full</TrimMode>
 
     <!-- 에이전트가 이름으로 부른다. 어셈블리 이름이 곧 명령 이름이다. -->
-    <AssemblyName>llmtools-browser</AssemblyName>
+    <AssemblyName>agentclihub-browser</AssemblyName>
     <RootNamespace>LlmTools.Cli</RootNamespace>
-    <Product>LLM Tools browser bridge</Product>
-    <Version>1.5.3</Version>
+    <Product>Agent CLI Hub browser bridge</Product>
+    <Version>1.8.0</Version>
   </PropertyGroup>
 
+  <ItemGroup>
+    <Compile Include="..\LlmTools\UpgradeMigration.cs" Link="UpgradeMigration.cs" />
+  </ItemGroup>
 </Project>

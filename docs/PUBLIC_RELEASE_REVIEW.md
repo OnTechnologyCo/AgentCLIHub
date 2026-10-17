@@ -3,7 +3,7 @@
 Initial review date: **2026-10-10 (Asia/Seoul)**
 Initially reviewed source snapshot: **d1033d1ad64134503cfcddf010e1c8c043710cbc**
 Pre-publication source/history verified: **30a503e5194fe34f6cb667432b61760ec81d3128**
-Repository: **OnTechnologyCo/LLM_Tools**
+Repository: **OnTechnologyCo/AgentCLIHub**
 Status: **공개 / PUBLIC — published on 2026-10-10 by maintainer decision; unresolved service-term and rights checks remain.**
 
 ## 한국어
