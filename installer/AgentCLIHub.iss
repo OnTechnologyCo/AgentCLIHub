@@ -84,7 +84,7 @@ Type: dirifempty; Name: "{app}"
 const
   ProductKey = 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{7C1B4E2A-9D3F-4A56-B0E7-6F2C8A1D5E94}_is1';
 var
-  PreviousDir, PreviousVersion, MovedInstallDir: String;
+  PreviousDir, PreviousVersion, MovedInstallDir, UninstallerBackup: String;
   HelperReady, Prepared, InstallSucceeded: Boolean;
 
 function GetFileAttributes(Path: String): Cardinal;
@@ -148,6 +148,66 @@ begin
       mbInformation, MB_OK, IDOK);
 end;
 
+procedure RestorePreviousUninstaller();
+var
+  Entry: TFindRec;
+  Restored: Boolean;
+begin
+  if UninstallerBackup = '' then exit;
+  Restored := True;
+  if FindFirst(UninstallerBackup + '\*', Entry) then begin
+    try
+      repeat
+        if (Entry.Attributes and $10) = 0 then
+          if not FileCopy(UninstallerBackup + '\' + Entry.Name,
+              MovedInstallDir + '\' + Entry.Name, False) then Restored := False;
+      until not FindNext(Entry);
+    finally
+      FindClose(Entry);
+    end;
+  end;
+  if Restored then begin
+    DelTree(UninstallerBackup, True, True, True);
+    UninstallerBackup := '';
+  end else Log('Previous uninstaller preserved at: ' + UninstallerBackup);
+end;
+
+function StagePreviousUninstaller(): String;
+var
+  Entry: TFindRec;
+  Extension: String;
+begin
+  Result := '';
+  UninstallerBackup := MovedInstallDir + '\.agentclihub-uninstall';
+  if DirExists(UninstallerBackup) then begin
+    Result := '이전 설치 복구 파일이 있습니다. 원본을 보존하고 설치를 중단했습니다.';
+    UninstallerBackup := '';
+    exit;
+  end;
+  if not CreateDir(UninstallerBackup) then begin
+    Result := '기존 제거 정보를 보관하지 못했습니다.';
+    UninstallerBackup := '';
+    exit;
+  end;
+  { 제거 기록에는 절대 경로가 있다. 새 폴더에서는 제거 정보를 새로 만든다. }
+  if FindFirst(MovedInstallDir + '\unins*', Entry) then begin
+    try
+      repeat
+        Extension := Lowercase(ExtractFileExt(Entry.Name));
+        if ((Entry.Attributes and $10) = 0) and
+            ((Extension = '.exe') or (Extension = '.dat') or (Extension = '.msg')) then
+          if not RenameFile(MovedInstallDir + '\' + Entry.Name,
+              UninstallerBackup + '\' + Entry.Name) then begin
+            Result := '기존 제거 정보를 옮기지 못했습니다. 실행 중인 제거 프로그램을 닫으세요.';
+            break;
+          end;
+      until not FindNext(Entry);
+    finally
+      FindClose(Entry);
+    end;
+  end;
+end;
+
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   TargetDir: String;
@@ -179,11 +239,18 @@ begin
       exit;
     end;
     MovedInstallDir := TargetDir;
+    Result := StagePreviousUninstaller();
+    if Result <> '' then begin
+      RestorePreviousUninstaller();
+      if RenameFile(MovedInstallDir, PreviousDir) then MovedInstallDir := '';
+      exit;
+    end;
   end;
 
   Result := RunMigration('migrate');
   if Result <> '' then begin
     if MovedInstallDir <> '' then begin
+      RestorePreviousUninstaller();
       if RenameFile(MovedInstallDir, PreviousDir) then MovedInstallDir := ''
       else Result := Result + #13#10 + '설치 파일은 다음 위치에 보존되어 있습니다: ' + MovedInstallDir;
     end;
@@ -216,6 +283,11 @@ var
 begin
   if CurStep = ssPostInstall then begin
     InstallSucceeded := True;
+    if UninstallerBackup <> '' then begin
+      if not DelTree(UninstallerBackup, True, True, True) then
+        Log('Could not remove old uninstall backup: ' + UninstallerBackup);
+      UninstallerBackup := '';
+    end;
     ErrorText := RunMigration('commit');
     if ErrorText <> '' then
       MsgBox('설치는 완료됐지만 이전 기록 정리가 필요합니다:' + #13#10 + ErrorText, mbError, MB_OK);
@@ -244,6 +316,7 @@ begin
     if ErrorText <> '' then
       MsgBox('설치를 취소했습니다. 데이터는 보존되어 있으나 자동 복원이 완료되지 않았습니다:' + #13#10 + ErrorText, mbError, MB_OK);
   end;
+  if not InstallSucceeded then RestorePreviousUninstaller();
   if (MovedInstallDir <> '') and not InstallSucceeded then
     if not RenameFile(MovedInstallDir, PreviousDir) then
       Log('Original installation files preserved at: ' + MovedInstallDir);
