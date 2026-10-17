@@ -34,7 +34,7 @@ DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
 DisableDirPage=auto
 
-; 사용자 권한으로만 깐다 — {autopf} 가 %LOCALAPPDATA%\Programs 로 풀린다.
+; 새 설치는 사용자 폴더를 쓰고, 업그레이드는 기존 설치 권한을 이어받는다.
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 UsePreviousPrivileges=yes
@@ -247,4 +247,33 @@ begin
   if (MovedInstallDir <> '') and not InstallSucceeded then
     if not RenameFile(MovedInstallDir, PreviousDir) then
       Log('Original installation files preserved at: ' + MovedInstallDir);
+end;
+
+{ 이전 설치에서 이동한 빈 하위 폴더도 제거한다. 사용자 파일과 연결 폴더는 보존한다. }
+procedure RemoveEmptyInstallDirectories(Path: String);
+var
+  Entry: TFindRec;
+  Child: String;
+begin
+  if (GetFileAttributes(Path) and $400) <> 0 then exit;
+  if FindFirst(AddBackslash(Path) + '*', Entry) then begin
+    try
+      repeat
+        if (Entry.Name <> '.') and (Entry.Name <> '..') and
+           ((Entry.Attributes and $10) <> 0) and ((Entry.Attributes and $400) = 0) then begin
+          Child := AddBackslash(Path) + Entry.Name;
+          RemoveEmptyInstallDirectories(Child);
+        end;
+      until not FindNext(Entry);
+    finally
+      FindClose(Entry);
+    end;
+  end;
+  RemoveDir(Path);
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+begin
+  if CurUninstallStep = usPostUninstall then
+    RemoveEmptyInstallDirectories(ExpandConstant('{app}'));
 end;
