@@ -114,7 +114,7 @@ The usage strip has one cell per account (`Claude`, `Claude·Company`, `GPT`, `G
 ## Run
 
 ```powershell
-git clone https://github.com/OnTechnologyCo/AgentCLIHub.git
+git clone https://github.com/OnTechnologyCo/LLM_Tools.git AgentCLIHub
 cd AgentCLIHub
 dotnet build AgentCLIHub.sln
 .\src\LlmTools\bin\Debug\net9.0-windows\AgentCLIHub.exe

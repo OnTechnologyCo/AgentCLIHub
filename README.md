@@ -208,7 +208,7 @@ Enter. 탭은 그대로(이름·자리·폴더) 두고 안의 CLI 만 갈아 끼
 ## 실행
 
 ```powershell
-git clone https://github.com/OnTechnologyCo/AgentCLIHub.git
+git clone https://github.com/OnTechnologyCo/LLM_Tools.git AgentCLIHub
 cd AgentCLIHub
 dotnet build AgentCLIHub.sln
 .\src\LlmTools\bin\Debug\net9.0-windows\AgentCLIHub.exe
