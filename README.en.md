@@ -323,6 +323,15 @@ Run report checks with `dotnet run --project tests/InstallerChecks/InstallerChec
 Installer builds also test the actual published helper with a read-only temporary directory before
 packaging. These checks do not modify the user's installation or application data.
 
+## 1.8.4 Claude account resume and history context menu
+
+- Claude account transfers now resume the original transcript by absolute path, including when account history directories are separate or UUID lookup skips a junction.
+- History includes account-specific Claude transcripts and excludes subagent transcripts. Missing selected sessions are not replaced with unrelated conversations.
+- Open **Resume → right-click a conversation → Continue with another CLI/account… → select an account** to continue in a new tab. A normal click still resumes with the original account.
+- Cross-CLI imports into Claude are stored in the selected account's history directory. Login credentials are never copied.
+
+Update with `AgentCLIHub-Setup-1.8.4.0.exe` and restart the app.
+
 ## 1.8.3 agent browser tab cleanup
 
 Agent guidance now requires closing task tabs it opened after gathering the required information

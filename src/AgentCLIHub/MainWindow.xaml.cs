@@ -302,6 +302,16 @@ public partial class MainWindow : Window
                 PostSwitch(m["id"]?.GetValue<string>() ?? "");
                 break;
 
+            case "history.switch.list":
+                PostHistorySwitch(m);
+                break;
+
+            case "history.switch":
+                SwitchHistory(m["id"]?.GetValue<string>() ?? "",
+                              m["backend"]?.GetValue<string>() ?? "",
+                              m["account"]?.GetValue<string>() ?? "");
+                break;
+
             case "tab.switch":
                 SwitchTab(m["id"]?.GetValue<string>() ?? "",
                           m["backend"]?.GetValue<string>() ?? "",
@@ -504,7 +514,10 @@ public partial class MainWindow : Window
             return;
         }
         var cli = CliProfile.ForOrDefault(backend);
-        OpenTab(cwd, backend, ResumeMode.Session(sessionId), account: Accounts.Resolve(Settings.Load(), cli, account));
+        var settings = Settings.Load();
+        var resolved = Accounts.Resolve(settings, cli, account);
+        if (resolved != account) { Log("이 대화의 계정을 찾지 못했습니다. 다른 계정으로 이어가기를 선택하세요.", "e"); return; }
+        OpenTab(cwd, backend, ResumeMode.Session(sessionId), account: resolved);
     }
 
     /// <summary>
@@ -519,7 +532,8 @@ public partial class MainWindow : Window
         if (alias.Length > 0) _alias[id] = alias;
         var name = TabName(cwd);
 
-        var host = new TerminalHost(id, cwd, cli, account, Post, (msg, lvl) => Log($"[{name}] {msg}", lvl)) { HandoffPath = handoffPath };
+        var host = new TerminalHost(id, cwd, cli, account, Post, (msg, lvl) => Log($"[{name}] {msg}", lvl))
+            { HandoffPath = handoffPath ?? resume.HandoffPath, ResumeTranscriptPath = resume.TranscriptPath };
         _tabs[id] = host;
         _order.Add(id);
 
@@ -893,7 +907,7 @@ public partial class MainWindow : Window
     // 한 계정의 한도가 차면 **그 탭의 대화를 다른 계정(다른 CLI 도 된다)으로 넘겨 이어간다.**
     // 탭은 그대로 두고 안의 CLI 만 갈아 끼운다 — 이름·자리·폴더가 그대로라 무엇을 하던 탭인지 안 헷갈린다.
     //
-    //   claude → claude(다른 계정)  같은 대화 파일을 그대로 --resume. 기록이 계정과 무관하게 ~/.claude 에 있다.
+    //   claude → claude(다른 계정)  실제 대화 파일의 절대 경로로 --resume. 계정별 projects 분리에도 대응한다.
     //   그 밖(→ codex, codex → …)   기록을 받을 CLI 의 형식으로 옮겨 쓴 **새 대화**를 이어하기로 연다
     //                                (Transcript.cs). 원본은 그대로 남는다.
     //
@@ -922,27 +936,28 @@ public partial class MainWindow : Window
     {
         if (!_tabs.TryGetValue(id, out var h) || h.IsLogin) return;
         if (!h.Cli.SupportsTransfer) return;
-        var c = Settings.Load();
         var claimed = Claimed(h);
-        var fromView = Accounts.View(c, h.Cli, h.Account);
+        PostSwitchChoices(id, h.Cli, h.Account, () => TransferSource(h, claimed));
+    }
 
+    private void PostSwitchChoices(string id, CliProfile source, string account,
+        Func<(SessionRef? Session, Transcript? Transcript)> read, bool history = false)
+    {
+        var c = Settings.Load();
+        var fromView = Accounts.View(c, source, account);
         var items = CliProfile.All.Where(p => p.SupportsTransfer).SelectMany(p =>
         {
             var loc = CliLocator.Locate(p, p.CachedPath(c));
             return Accounts.Of(c, p)
-                .Where(a => !(p == h.Cli && a.Id == h.Account))
+                .Where(a => !(p == source && a.Id == account))
                 .Select(a => new
                 {
-                    backend = p.Backend,
-                    display = p.Display,
-                    account = a.Id,
-                    accountName = a.Label,
-                    email = a.Email,
+                    backend = p.Backend, display = p.Display, account = a.Id,
+                    accountName = a.Label, email = a.Email,
                     usable = loc.Found && (a.IsDefault || a.LoggedIn),
                     why = !loc.Found ? (loc.Error ?? p.NotFoundMessage)
                         : !(a.IsDefault || a.LoggedIn) ? "로그인 필요 — [⚙ 설정] → [계정] 에서 로그인하세요" : "",
-                    // 어떻게 넘어가는가. 같은 claude 끼리는 같은 파일을 그대로 잇고, 나머지는 옮겨 쓴 새 대화다.
-                    how = p.Kind == CliKind.Antigravity ? "context" : p == h.Cli && p.Kind == CliKind.Claude ? "same" : "copy",
+                    how = p.Kind == CliKind.Antigravity ? "context" : p == source && p.Kind == CliKind.Claude ? "same" : "copy",
                 });
         }).ToList();
 
@@ -950,7 +965,8 @@ public partial class MainWindow : Window
         {
             t = "switch",
             id,
-            from = new { backend = h.Cli.Backend, display = h.Cli.Display, account = h.Account, accountName = fromView.Label },
+            history,
+            from = new { backend = source.Backend, display = source.Display, account, accountName = fromView.Label },
             items,
             session = (object?)null,
             loading = true,
@@ -961,7 +977,7 @@ public partial class MainWindow : Window
             object? session = null;
             try
             {
-                var (src, tr) = TransferSource(h, claimed);
+                var (src, tr) = read();
                 if (tr is not null)
                 {
                     session = new
@@ -971,7 +987,7 @@ public partial class MainWindow : Window
                         turns = tr.UserTurns,
                         items = tr.Items.Count,
                         empty = !tr.HasConversation,
-                        when = (src?.WhenUtc ?? h.StartedUtc).ToLocalTime().ToString("MM-dd HH:mm"),
+                        when = (src?.WhenUtc ?? DateTime.UtcNow).ToLocalTime().ToString("MM-dd HH:mm"),
                     };
                 }
             }
@@ -992,7 +1008,10 @@ public partial class MainWindow : Window
             source = AntigravityTransfer.FindSession(host.Cwd, handoff);
             if (source is null) return (null, AntigravityTransfer.ReadHandoff(handoff));
         }
-        else source = SessionFinder.Current(host.Cli, host.Cwd, host.CodexHome, host.StartedUtc, host.KnownSessionId, claimed);
+        else source = SessionFinder.Current(host.Cli, host.Cwd, host.CodexHome, host.StartedUtc, host.KnownSessionId, claimed, host.ClaudeHistoryHome);
+        // 계정별 폴더가 분리되어 있어도, 앞선 전환 때 전달한 원본 파일을 다시 찾는다.
+        if (source is null && host.Cli.Kind == CliKind.Claude && host.ResumeTranscriptPath is { } path && File.Exists(path))
+            source = new SessionRef(host.Cli, Path.GetFileNameWithoutExtension(path), path, File.GetLastWriteTimeUtc(path));
         return (source, source is null ? null : TranscriptReader.Read(host.Cli, source.Path));
     }
 
@@ -1037,40 +1056,8 @@ public partial class MainWindow : Window
             try
             {
                 var (src, tr) = TransferSource(h, claimed);
-                if (tr is null)
-                {
-                    mode = ResumeMode.New;
-                    note = "넘길 대화 기록이 아직 없어 새 대화로 엽니다.";
-                }
-                else if (src is not null && target == h.Cli && target.Kind == CliKind.Claude)
-                {
-                    // 같은 파일을 그대로 잇는다 — 기록이 계정과 무관하게 ~/.claude 한 곳에 있다.
-                    mode = ResumeMode.Session(src.Id);
-                    note = "같은 대화를 그대로 이어갑니다.";
-                }
-                else
-                {
-                    if (!tr.HasConversation)
-                    {
-                        mode = ResumeMode.New;
-                        note = "넘길 대화가 비어 있어 새 대화로 엽니다.";
-                    }
-                    else if (target.Kind == CliKind.Antigravity)
-                    {
-                        var path = AntigravityTransfer.Write(tr, h.Cwd, from);
-                        mode = ResumeMode.Handoff(path);
-                        note = $"이전 대화를 인계 파일로 전달합니다(사용자 말 {tr.UserTurns}개) — {path}";
-                    }
-                    else
-                    {
-                        var preface = TranscriptWriter.Preface(tr, from);
-                        var (nid, path) = target.Kind == CliKind.Claude
-                            ? TranscriptWriter.ToClaude(tr, h.Cwd, preface)
-                            : TranscriptWriter.ToCodex(tr, h.Cwd, Accounts.CodexHomeOf(acc), preface);
-                        mode = ResumeMode.Session(nid);
-                        note = $"대화를 옮겨 적었습니다(사용자 말 {tr.UserTurns}개) — {path}";
-                    }
-                }
+                var home = target.Kind == CliKind.Claude ? ClaudeTransferHome(acc) : Accounts.CodexHomeOf(acc);
+                (mode, note) = ConversationTransfer.Prepare(h.Cli, src, tr, h.Cwd, target, home, from);
             }
             catch (Exception ex)
             {
@@ -1094,7 +1081,8 @@ public partial class MainWindow : Window
         if (!_tabs.TryGetValue(id, out var cur) || !ReferenceEquals(cur, old)) return;
 
         var name = TabName(old.Cwd);
-        var host = new TerminalHost(id, old.Cwd, target, account, Post, (msg, lvl) => Log($"[{name}] {msg}", lvl)) { HandoffPath = mode.HandoffPath };
+        var host = new TerminalHost(id, old.Cwd, target, account, Post, (msg, lvl) => Log($"[{name}] {msg}", lvl))
+            { HandoffPath = mode.HandoffPath, ResumeTranscriptPath = mode.TranscriptPath };
         _tabs[id] = host;
         SaveTabs();
 
@@ -1593,6 +1581,77 @@ public partial class MainWindow : Window
 
     // ── 지난 대화 ───────────────────────────────────────────────────────────
 
+    private IReadOnlyList<SessionEntry> _historyEntries = Array.Empty<SessionEntry>();
+    private string _historySwitchId = "";
+    private SessionEntry? _historySwitchEntry;
+    private bool _historySwitchBusy;
+
+    private static string ClaudeTransferHome(string account) =>
+        Accounts.ClaudeModeOf(account) == ClaudeMode.Token ? CliProfile.ClaudeHome : Accounts.ClaudeHomeOf(account);
+
+    private static (SessionRef Session, Transcript Transcript) ReadHistorySource(SessionEntry entry)
+    {
+        var source = SessionFinder.Find(entry) ?? throw new FileNotFoundException("선택한 대화 기록을 찾지 못했습니다. 지난 대화 목록을 새로 열어 확인하세요.");
+        var transcript = TranscriptReader.Read(source.Cli, source.Path);
+        if (!transcript.HasConversation) throw new IOException("선택한 대화에 이어갈 요청·답변 기록이 없습니다.");
+        return (source, transcript);
+    }
+
+    private void PostHistorySwitch(JsonNode message)
+    {
+        if (_historySwitchBusy) return;
+        var entry = _historyEntries.FirstOrDefault(e => e.Id == message["sessionId"]?.GetValue<string>() &&
+            e.Backend == message["backend"]?.GetValue<string>() && e.Account == (message["account"]?.GetValue<string>() ?? "") &&
+            e.Cwd == message["cwd"]?.GetValue<string>());
+        if (entry is null) { Log("지난 대화 목록을 새로 열어 대화를 선택하세요.", "w"); return; }
+        _historySwitchId = "history-" + Guid.NewGuid().ToString("N");
+        _historySwitchEntry = entry;
+        PostSwitchChoices(_historySwitchId, CliProfile.ForOrDefault(entry.Backend), entry.Account, () => ReadHistorySource(entry), history: true);
+    }
+
+    private void SwitchHistory(string id, string backend, string account)
+    {
+        if (id != _historySwitchId || _historySwitchEntry is not { } entry || _historySwitchBusy) return;
+        void Failed(string error)
+        {
+            Log(error, "e");
+            Post(new { t = "history.switch.failed", id, error });
+        }
+        var target = CliProfile.For(backend);
+        var settings = Settings.Load();
+        if (target is null || !target.SupportsTransfer || Accounts.Resolve(settings, target, account) != account)
+        { Failed("넘길 CLI·계정을 찾지 못했습니다. 설정의 계정을 확인하세요."); return; }
+        if (target.Backend == entry.Backend && account == entry.Account)
+        { Failed("다른 계정을 선택하세요."); return; }
+        var to = Accounts.View(settings, target, account);
+        if (!to.IsDefault && !to.LoggedIn) { Failed("선택한 계정에 먼저 로그인하세요."); return; }
+        if (!CliLocator.Locate(target, target.CachedPath(settings)).Found) { Failed(target.NotFoundMessage); return; }
+        if (!Directory.Exists(entry.Cwd)) { Failed($"폴더가 없어 이어갈 수 없습니다 — {entry.Cwd}"); return; }
+        var source = CliProfile.ForOrDefault(entry.Backend);
+        var from = $"{source.Display}({Accounts.View(settings, source, entry.Account).Label} 계정)";
+        var home = target.Kind == CliKind.Claude ? ClaudeTransferHome(account) : Accounts.CodexHomeOf(account);
+        _historySwitchBusy = true;
+        System.Threading.Tasks.Task.Run(() =>
+        {
+            try
+            {
+                var (session, transcript) = ReadHistorySource(entry);
+                var (mode, note) = ConversationTransfer.Prepare(source, session, transcript, entry.Cwd, target, home, from);
+                Dispatcher.BeginInvoke(() =>
+                {
+                    _historySwitchBusy = false;
+                    Post(new { t = "history.switched", id });
+                    OpenTab(entry.Cwd, target.Backend, mode, account: account);
+                    Log($"{from} → {target.Display}({to.Label} 계정): {note}", "i");
+                });
+            }
+            catch (Exception ex)
+            {
+                Dispatcher.BeginInvoke(() => { _historySwitchBusy = false; Failed("대화를 넘기지 못했습니다 — " + ex.Message); });
+            }
+        });
+    }
+
     /// <summary>
     /// 지난 대화 목록. **읽는 데 시간이 걸린다**(파일 수백 개를 훑는다) —
     /// UI 스레드에서 하면 목록 창이 뜨기 전에 앱이 멎은 것처럼 보이므로 배경으로 보낸다.
@@ -1602,7 +1661,13 @@ public partial class MainWindow : Window
         Post(new { t = "history.loading" });
         System.Threading.Tasks.Task.Run(() =>
         {
-            try { Post(new { t = "history", items = SessionStore.ForUi(Settings.Load()) }); }
+            try
+            {
+                var settings = Settings.Load();
+                var entries = SessionStore.Recent(settings);
+                var items = SessionStore.ForUi(settings, entries);
+                Dispatcher.BeginInvoke(() => { _historyEntries = entries; Post(new { t = "history", items }); });
+            }
             catch (Exception ex)
             {
                 Post(new { t = "history", items = Array.Empty<object>() });

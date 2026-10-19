@@ -43,6 +43,7 @@ public sealed class TerminalHost : IDisposable
 
     /// <summary>claude 계정의 설정 폴더(<c>CLAUDE_CONFIG_DIR</c>). 기본 계정이면 기본 폴더다.</summary>
     public string ClaudeHome => Accounts.ClaudeHomeOf(Account);
+    public string ClaudeHistoryHome => Accounts.ClaudeModeOf(Account) == ClaudeMode.Token ? CliProfile.ClaudeHome : ClaudeHome;
 
     /// <summary>CLI 가 뜬 시각. 그 뒤에 쓰인 기록이 이 탭의 대화다(<see cref="SessionFinder"/>).</summary>
     public DateTime StartedUtc { get; private set; } = DateTime.MaxValue;
@@ -53,6 +54,7 @@ public sealed class TerminalHost : IDisposable
     /// </summary>
     public string? KnownSessionId { get; private set; }
     public string? HandoffPath { get; init; }
+    public string? ResumeTranscriptPath { get; init; }
 
     private readonly Action<object> _toUi;
     private readonly Action<string, string> _log;
@@ -389,6 +391,23 @@ public sealed class TerminalHost : IDisposable
         if (Cli.Kind == CliKind.Codex && Account.Length > 0) Accounts.PrepareCodexHome(CodexHome, _log);
         if (claudeDir) Accounts.PrepareClaudeHome(ClaudeHome, _log);
 
+        if (!IsLogin && Cli.Kind == CliKind.Claude && resume.SessionId is { Length: > 0 } resumeId)
+        {
+            // 계정의 projects 가 연결되지 않았거나 CLI 의 UUID 검색이 연결 폴더를 건너뛰어도
+            // 실제 원본 파일로 이어간다. 번호와 파일 경로를 분리하여 다른 CLI 에는 UUID 를 보낸다.
+            var path = ResumeTranscriptPath;
+            if (path is null || !System.IO.File.Exists(path) ||
+                !string.Equals(System.IO.Path.GetFileNameWithoutExtension(path), resumeId, StringComparison.OrdinalIgnoreCase))
+            {
+                var homes = new[] { ClaudeHistoryHome, CliProfile.ClaudeHome }
+                    .Concat(cfg.Accounts.Where(a => CliProfile.For(a.Backend) == CliProfile.Claude)
+                        .Select(a => Accounts.ClaudeHomeOf(a.Id)));
+                path = homes.Select(home => SessionFinder.FindClaude(resumeId, home)).FirstOrDefault(s => s is not null)?.Path;
+            }
+            if (path is null) { Fail($"이어갈 Claude 대화 파일을 찾지 못했습니다 — {resumeId}. 지난 대화 목록을 새로 열어 확인하세요."); return; }
+            resume = resume with { TranscriptPath = System.IO.Path.GetFullPath(path) };
+        }
+
         // 계정 환경. **로그인이 없으면 띄우지 않는다** — 기본 계정으로 슬쩍 떨어져 뜨면 사용자는 넘겼다고
         // 믿는 채로 한도가 찬 계정을 계속 쓰게 된다.
         var env = TerminalEnv(Cli);
@@ -446,7 +465,7 @@ public sealed class TerminalHost : IDisposable
                 string? newId = null;
                 if (resume.SessionId is { Length: > 0 } sid) KnownSessionId = sid;
                 else if (resume.Fresh && Cli.Kind == CliKind.Claude) KnownSessionId = newId = Guid.NewGuid().ToString();
-                else if (!resume.Fresh && Cli.SupportsTransfer) KnownSessionId = SessionFinder.Latest(Cli, Cwd, CodexHome)?.Id;
+                else if (!resume.Fresh && Cli.SupportsTransfer) KnownSessionId = SessionFinder.Latest(Cli, Cwd, CodexHome, ClaudeHistoryHome)?.Id;
 
                 line = Cli.BuildCommandLine(loc.CommandHead(), cfg, resume, Cwd, CodexHome, newId,
                                             claudeDir ? ClaudeHome : null);

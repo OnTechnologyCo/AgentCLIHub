@@ -602,11 +602,11 @@ public static class TranscriptWriter
     /// 어시스턴트 메시지의 모델은 claude 가 자기가 지어낸 메시지에 붙이는 <c>&lt;synthetic&gt;</c> 로 적는다.
     /// </summary>
     /// <returns>새 세션 번호와 파일 경로.</returns>
-    public static (string Id, string Path) ToClaude(Transcript t, string cwd, string preface)
+    public static (string Id, string Path) ToClaude(Transcript t, string cwd, string preface, string? home = null)
     {
         var msgs = Alternate(Budgeted(t), preface);
         var id = Guid.NewGuid().ToString();
-        var dir = SessionFinder.ClaudeProjectDir(cwd);
+        var dir = SessionFinder.ClaudeProjectDir(cwd, home);
         Directory.CreateDirectory(dir);
         var path = Path.Combine(dir, id + ".jsonl");
 
@@ -831,9 +831,9 @@ public static class SessionFinder
     /// 이 폴더의 claude 기록이 쌓이는 곳. **이미 있는 것을 먼저 따른다** — 아주 긴 경로는 claude 가 잘라
     /// 뒤에 해시를 붙이는데, 그 해시는 우리가 못 만든다. 기존 기록이 있으면 그 폴더가 답이다.
     /// </summary>
-    public static string ClaudeProjectDir(string cwd)
+    public static string ClaudeProjectDir(string cwd, string? home = null)
     {
-        var root = Path.Combine(CliProfile.ClaudeHome, "projects");
+        var root = Path.Combine(home ?? CliProfile.ClaudeHome, "projects");
         var slug = ClaudeSlug(Path.TrimEndingDirectorySeparator(cwd));
         var dir = Path.Combine(root, slug);
         if (Directory.Exists(dir) || slug.Length <= 200) return dir;
@@ -848,14 +848,14 @@ public static class SessionFinder
     /// <param name="knownId">띄울 때 우리가 준 번호(없으면 null).</param>
     /// <param name="claimed">같은 CLI·같은 홈의 **다른 탭**이 쥐고 있는 번호. 이것들은 이 탭 것이 아니다.</param>
     public static SessionRef? Current(CliProfile cli, string cwd, string codexHome, DateTime startedUtc,
-                                      string? knownId, ISet<string> claimed)
+                                      string? knownId, ISet<string> claimed, string? claudeHome = null)
     {
         if (!cli.SupportsTransfer) return null;
         try
         {
             return cli.Kind switch
             {
-                CliKind.Claude => Claude(cwd, startedUtc, knownId, claimed),
+                CliKind.Claude => Claude(cwd, startedUtc, knownId, claimed, claudeHome),
                 CliKind.Antigravity => AntigravitySessions.Current(cwd, startedUtc, knownId, claimed),
                 _ => Codex(cwd, codexHome, startedUtc, knownId, claimed),
             };
@@ -864,22 +864,58 @@ public static class SessionFinder
     }
 
     /// <summary>띄우기 **전에** 그 폴더에서 이어갈 대화 — <c>--continue</c> · <c>resume --last</c> 가 고를 그것.</summary>
-    public static SessionRef? Latest(CliProfile cli, string cwd, string codexHome) =>
-        Current(cli, cwd, codexHome, DateTime.MaxValue, null, new HashSet<string>());
+    public static SessionRef? Latest(CliProfile cli, string cwd, string codexHome, string? claudeHome = null) =>
+        Current(cli, cwd, codexHome, DateTime.MaxValue, null, new HashSet<string>(), claudeHome);
 
-    private static SessionRef? Claude(string cwd, DateTime startedUtc, string? knownId, ISet<string> claimed)
+    private static SessionRef? Claude(string cwd, DateTime startedUtc, string? knownId, ISet<string> claimed, string? home)
     {
-        var dir = ClaudeProjectDir(cwd);
-        if (!Directory.Exists(dir)) return null;
+        var dir = ClaudeProjectDir(cwd, home);
+        var known = FindClaude(knownId, home ?? CliProfile.ClaudeHome);
+        if (!Directory.Exists(dir)) return known;
 
-        var files = new DirectoryInfo(dir).GetFiles("*.jsonl");
+        var files = new DirectoryInfo(dir).GetFiles("*.jsonl")
+            .Where(f => Guid.TryParse(Stem(f), out _)).ToArray();
         var since = startedUtc == DateTime.MaxValue ? DateTime.MaxValue : startedUtc.AddSeconds(-5);
         var pool = files.Where(f => f.LastWriteTimeUtc >= since && !claimed.Contains(Stem(f)))
                         .Concat(files.Where(f => knownId is not null && Stem(f) == knownId))
                         .ToList();
-        var pick = pool.OrderByDescending(f => f.LastWriteTimeUtc).FirstOrDefault()
-                   ?? files.Where(f => !claimed.Contains(Stem(f))).OrderByDescending(f => f.LastWriteTimeUtc).FirstOrDefault();
-        return pick is null ? null : new SessionRef(CliProfile.Claude, Stem(pick), pick.FullName, pick.LastWriteTimeUtc);
+        var pick = pool.OrderByDescending(f => f.LastWriteTimeUtc).FirstOrDefault();
+        // 폴더 이름 변경·긴 경로·사용자 지정 프로젝트 폴더에서도 정확한 번호를 보존한다.
+        if (known is not null && (pick is null || pick.LastWriteTimeUtc < since)) return known;
+        // 번호를 알고 있는 탭에서 파일을 못 찾았다고 오래된 다른 대화를 넘기면 안 된다.
+        if (pick is null && knownId is null && startedUtc == DateTime.MaxValue)
+            pick = files.Where(f => !claimed.Contains(Stem(f))).OrderByDescending(f => f.LastWriteTimeUtc).FirstOrDefault();
+        return pick is null ? known : new SessionRef(CliProfile.Claude, Stem(pick), pick.FullName, pick.LastWriteTimeUtc);
+    }
+
+    /// <summary>번호로 지정한 Claude 대화만 찾는다. 다른 최신 대화나 subagents 기록으로 대체하지 않는다.</summary>
+    public static SessionRef? FindClaude(string? id, string home)
+    {
+        if (!Guid.TryParse(id, out _)) return null;
+        var root = Path.Combine(home, "projects");
+        if (!Directory.Exists(root)) return null;
+        foreach (var dir in Directory.EnumerateDirectories(root))
+        {
+            var path = Path.Combine(dir, id + ".jsonl");
+            if (File.Exists(path)) return new SessionRef(CliProfile.Claude, id!, path, File.GetLastWriteTimeUtc(path));
+        }
+        return null;
+    }
+
+    /// <summary>지난 대화에서 선택한 항목을 정확하게 찾는다. 없으면 다른 대화를 열지 않는다.</summary>
+    public static SessionRef? Find(SessionEntry entry)
+    {
+        var cli = CliProfile.ForOrDefault(entry.Backend);
+        if (cli.Kind == CliKind.Claude) return FindClaude(entry.Id, Accounts.ClaudeHomeOf(entry.Account));
+        if (cli.Kind == CliKind.Antigravity)
+            return AntigravitySessions.Current(entry.Cwd, DateTime.MaxValue, entry.Id, new HashSet<string>()) is { } ag && ag.Id == entry.Id ? ag : null;
+        if (!Guid.TryParse(entry.Id, out _)) return null;
+        var root = Path.Combine(Accounts.CodexHomeOf(entry.Account), "sessions");
+        if (!Directory.Exists(root)) return null;
+        foreach (var path in Directory.EnumerateFiles(root, "rollout-*.jsonl", SearchOption.AllDirectories))
+            if (path.Contains(entry.Id, StringComparison.OrdinalIgnoreCase) && CodexMeta(path).Id == entry.Id)
+                return new SessionRef(cli, entry.Id, path, File.GetLastWriteTimeUtc(path));
+        return null;
     }
 
     private static SessionRef? Codex(string cwd, string home, DateTime startedUtc, string? knownId, ISet<string> claimed)

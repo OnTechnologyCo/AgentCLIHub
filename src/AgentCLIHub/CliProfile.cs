@@ -47,7 +47,8 @@ public readonly record struct ResumeMode(bool Fresh, string? SessionId, string? 
     public static readonly ResumeMode Last = new(false, null);
 
     /// <summary>번호로 콕 집은 대화를 이어간다.</summary>
-    public static ResumeMode Session(string id) => new(false, id);
+    public string? TranscriptPath { get; init; }
+    public static ResumeMode Session(string id, string? transcriptPath = null) => new(false, id) { TranscriptPath = transcriptPath };
     public static ResumeMode Handoff(string path) => new(true, null, path);
 }
 
@@ -392,7 +393,7 @@ public sealed class CliProfile
 
         // **이어서 한다.** 강제 종료·전원 차단 뒤에도 하던 이야기가 남는다.
         // 대화가 아직 없는 폴더에서도 안전하다 — 실측에서 그냥 새로 시작했다(종료코드 0).
-        if (resume.SessionId is { Length: > 0 } sid) sb.Append(" --resume ").Append(Quote(sid));
+        if (resume.SessionId is { Length: > 0 } sid) sb.Append(" --resume ").Append(Quote(resume.TranscriptPath ?? sid));
         else if (!resume.Fresh) sb.Append(" --continue");
         else if (newSessionId is { Length: > 0 } nid) sb.Append(" --session-id ").Append(Quote(nid));
 

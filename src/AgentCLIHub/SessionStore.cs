@@ -17,7 +17,7 @@ namespace AgentCLIHub;
 /// <param name="Account">
 /// 그 기록이 있는 계정(<see cref="AgentCLIHub.Account.Id"/>, 빈 값 = 기본 계정). codex 는 계정마다 홈이 달라
 /// 기록도 그 홈에 있다 — 이어갈 때 **그 계정으로** 띄워야 codex 가 기록을 찾는다.
-/// claude 는 계정과 무관하게 한 곳(<c>~/.claude</c>)에 쌓이므로 늘 빈 값이다.
+/// claude 도 연결되지 않은 계정별 projects 폴더가 있으면 그 계정을 기록한다.
 /// </param>
 public sealed record SessionEntry(string Backend, string Id, string Cwd, DateTime When, string Title, string Account = "");
 
@@ -47,7 +47,20 @@ public static class SessionStore
     public static IReadOnlyList<SessionEntry> Recent(Settings s, int max = 60)
     {
         var all = new List<SessionEntry>();
-        try { all.AddRange(Claude()); } catch { /* 한쪽을 못 읽어도 다른 쪽은 보여 준다 */ }
+        var claudeRoots = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        void AddClaude(string home, string account)
+        {
+            try
+            {
+                var root = new DirectoryInfo(Path.Combine(home, "projects"));
+                var real = root.ResolveLinkTarget(true)?.FullName ?? root.FullName;
+                if (claudeRoots.Add(real)) all.AddRange(Claude(home, account));
+            }
+            catch { /* 한 계정의 읽기 실패가 다른 계정의 목록을 가리지 않게 한다 */ }
+        }
+        AddClaude(CliProfile.ClaudeHome, "");
+        foreach (var a in s.Accounts.Where(a => CliProfile.For(a.Backend) == CliProfile.Claude))
+            AddClaude(Accounts.ClaudeHomeOf(a.Id), a.Id);
         try { all.AddRange(Codex(CliProfile.CodexHome, "")); } catch { }
         try { all.AddRange(AntigravitySessions.Recent()); } catch { }
         foreach (var a in s.Accounts.Where(a => CliProfile.For(a.Backend) == CliProfile.Codex))
@@ -64,13 +77,14 @@ public static class SessionStore
     /// `D--99--Temp-X` 로 접는데, 점·공백·역슬래시가 전부 대시가 되어 되돌릴 방법이 없다.
     /// 대신 파일 안의 `cwd` 를 읽는다 — 거기에는 원본이 그대로 들어 있다.
     /// </summary>
-    private static IEnumerable<SessionEntry> Claude()
+    public static IEnumerable<SessionEntry> Claude(string home, string account = "")
     {
-        var root = Path.Combine(CliProfile.ClaudeHome, "projects");
+        var root = Path.Combine(home, "projects");
         if (!Directory.Exists(root)) yield break;
 
-        var files = new DirectoryInfo(root)
-            .EnumerateFiles("*.jsonl", SearchOption.AllDirectories)
+        var files = new DirectoryInfo(root).EnumerateDirectories()
+            .SelectMany(d => d.EnumerateFiles("*.jsonl", SearchOption.TopDirectoryOnly))
+            .Where(f => Guid.TryParse(Path.GetFileNameWithoutExtension(f.Name), out _))
             .OrderByDescending(f => f.LastWriteTimeUtc)
             .Take(ScanFiles);
 
@@ -97,7 +111,7 @@ public static class SessionStore
 
             if (cwd.Length == 0) continue;   // 폴더를 모르면 이어갈 수가 없다
             yield return new SessionEntry("claude_code", Path.GetFileNameWithoutExtension(f.Name),
-                                          cwd, f.LastWriteTime, Fallback(title, cwd));
+                                          cwd, f.LastWriteTime, Fallback(title, cwd), account);
         }
     }
 
@@ -211,7 +225,9 @@ public static class SessionStore
                          : "(첫 발화 없음) " + (Path.GetFileName(Path.TrimEndingDirectorySeparator(cwd)) ?? cwd);
 
     /// <summary>화면으로 보낼 형태.</summary>
-    public static object[] ForUi(Settings s, int max = 60) => Recent(s, max).Select(e => (object)new
+    public static object[] ForUi(Settings s, int max = 60) => ForUi(s, Recent(s, max));
+
+    public static object[] ForUi(Settings s, IEnumerable<SessionEntry> entries) => entries.Select(e => (object)new
     {
         backend = e.Backend,
         cli = CliProfile.ForOrDefault(e.Backend).Display,

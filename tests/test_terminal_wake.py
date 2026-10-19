@@ -428,5 +428,72 @@ class TerminalWakeTests(unittest.TestCase):
         self.assertTrue(self.page.evaluate("sent.some(m => m.t === 'tab.resume' && m.backend === 'antigravity_cli' && m.sessionId === 'ag-session')"))
 
 
+    def history_fixture(self):
+        self.page.locator("#resume").click()
+        self.message(t="history", items=[
+            {"backend": "claude_code", "cli": "Claude Code", "id": "first", "cwd": "C:/first",
+             "folder": "first", "title": "First", "when": "2026-10-19", "account": "account-a"},
+            {"backend": "claude_code", "cli": "Claude Code", "id": "second", "cwd": "C:/second",
+             "folder": "second", "title": "Second", "when": "2026-10-19", "account": "account-b"}])
+
+    def history_choices(self):
+        self.message(t="switch", id="history-test", history=True, loading=True,
+                     **{"from": {"backend": "claude_code", "display": "Claude Code", "account": "account-b"}},
+                     items=[{"backend": "claude_code", "display": "Claude Code", "account": "account-a",
+                             "accountName": "A", "usable": True, "how": "same"}])
+
+    def test_filtered_history_right_click_keeps_exact_source(self):
+        self.history_fixture()
+        self.page.locator("#hq").fill("Second")
+        self.clear_messages()
+        self.page.locator("#hlist .hrow .ti").click(button="right")
+        self.page.locator("#menu button").first.click()
+        request = self.page.evaluate("sent.find(m => m.t === 'history.switch.list')")
+        self.assertEqual((request["sessionId"], request["account"], request["cwd"]),
+                         ("second", "account-b", "C:/second"))
+        self.assertFalse(self.page.evaluate("sent.some(m => m.t === 'tab.resume')"))
+
+    def test_history_account_transfer_needs_no_source_terminal(self):
+        self.history_fixture()
+        self.history_choices()
+        self.assertTrue(self.page.locator("#slist button").is_disabled())
+        self.message(t="switch.session", id="history-test", session={"id": "second", "title": "Second", "turns": 2})
+        self.page.locator("#slist button").click()
+        self.assertTrue(self.page.locator("#slist button").is_disabled())
+        request = self.page.evaluate("sent.find(m => m.t === 'history.switch')")
+        self.assertEqual((request["backend"], request["account"]), ("claude_code", "account-a"))
+        self.message(t="history.switched", id="history-test")
+        self.assertFalse(self.page.locator("#swap").is_visible())
+        self.assertFalse(self.page.locator("#hist").is_visible())
+        self.assertFalse(self.page.evaluate("sent.some(m => m.t === 'tab.switch')"))
+
+    def test_history_transfer_failure_preserves_list_and_existing_tab(self):
+        self.open_terminal("existing")
+        self.page.locator("#input").fill("draft")
+        self.history_fixture()
+        self.history_choices()
+        self.message(t="switch.session", id="history-test", session={"id": "second", "title": "Second", "turns": 2})
+        self.page.locator("#slist button").click()
+        self.message(t="history.switch.failed", id="history-test", error="Source file unavailable")
+        self.assertIn("Source file unavailable", self.page.locator("#ssess").inner_text())
+        self.assertTrue(self.page.locator("#hist").is_visible())
+        self.assertFalse(self.page.locator("#slist button").is_disabled())
+        self.assertEqual(self.page.locator("#input").input_value(), "draft")
+        self.assertTrue(self.page.evaluate("TABS.has('existing')"))
+
+    def test_history_left_click_still_resumes_original_account(self):
+        self.history_fixture()
+        self.clear_messages()
+        self.page.locator("#hlist .hrow").nth(1).click()
+        request = self.page.evaluate("sent.find(m => m.t === 'tab.resume')")
+        self.assertEqual((request["sessionId"], request["account"]), ("second", "account-b"))
+
+    def test_late_history_choices_do_not_reopen_dismissed_history(self):
+        self.history_fixture()
+        self.page.locator("#hclose").click()
+        self.history_choices()
+        self.assertFalse(self.page.locator("#swap").is_visible())
+
+
 if __name__ == "__main__":
     unittest.main()
