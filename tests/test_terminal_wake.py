@@ -132,6 +132,45 @@ class TerminalWakeTests(unittest.TestCase):
         self.page.clock.run_for(100)
         self.assert_quiet()
 
+    def test_agent_browser_close_removes_tab_and_keeps_user_browser_and_draft(self):
+        self.open_terminal()
+        self.page.locator("#input").fill("보존할 초안")
+        self.message(t="tab.opened", id="user-web", kind="browser", name="User tab", url="https://example.test/user")
+        self.message(t="tab.opened", id="agent-web", kind="browser", name="Agent tab", url="https://example.test/task")
+        self.message(t="tab.closed", id="agent-web")
+        self.page.clock.run_for(100)
+        self.assertEqual(self.page.locator(".tab[data-id='agent-web']").count(), 0)
+        self.assertEqual(self.page.evaluate("[...TABS.keys()]"), ["cx", "user-web"])
+        self.assertEqual(self.page.evaluate("active"), "user-web")
+        self.assertEqual(self.page.locator("#input").input_value(), "보존할 초안")
+        self.assertEqual(self.page.evaluate("sent.filter(m => m.t === 'browser.layout').at(-1).id"), "user-web")
+
+    def test_agent_background_browser_close_preserves_active_cli(self):
+        self.open_terminal()
+        self.message(t="tab.opened", id="agent-web", kind="browser", name="Agent tab", url="https://example.test/task")
+        self.page.evaluate("showTab('cx')")
+        self.page.locator("#input").fill("계속 작성")
+        self.clear_messages()
+        self.message(t="tab.closed", id="agent-web")
+        self.page.clock.run_for(100)
+        self.assertEqual(self.page.evaluate("active"), "cx")
+        self.assertEqual(self.page.locator(".bview").count(), 0)
+        self.assertEqual(self.page.locator("#input").input_value(), "계속 작성")
+        self.assertFalse(self.page.evaluate("sent.some(m => m.t === 'term.start' || m.t === 'term.restart')"))
+        self.assertEqual(self.page.evaluate("sent.filter(m => m.t === 'browser.layout').at(-1).id"), "")
+
+    def test_last_browser_close_and_duplicate_notification_leave_no_ghost_tab(self):
+        self.message(t="tab.opened", id="agent-web", kind="browser", name="Agent tab", url="https://example.test/task")
+        self.message(t="tab.closed", id="agent-web")
+        self.page.clock.run_for(100)
+        self.assertEqual(self.page.evaluate("TABS.size"), 0)
+        self.assertIsNone(self.page.evaluate("active"))
+        self.assertEqual(self.page.locator(".bview").count(), 0)
+        self.assertTrue(self.page.locator("#empty").is_visible())
+        self.clear_messages()
+        self.message(t="tab.closed", id="agent-web")
+        self.assertFalse(self.page.evaluate("sent.some(m => m.t === 'tab.close')"))
+
     def test_exit_error_close_and_account_switch_stop_old_wakes(self):
         for event in ("term.exit", "term.error", "tab.switched", "tab.closed"):
             with self.subTest(event=event):

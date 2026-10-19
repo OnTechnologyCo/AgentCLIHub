@@ -1802,7 +1802,7 @@ public partial class MainWindow : Window
                 // `--private` 는 도우미가 붙인다 — 계정 로그인 탭(AGENTCLIHUB_BROWSER_PRIVATE)이 연 로그인 페이지다.
                 var priv = a.Skip(1).Any(x => x == "--private");
                 var id = OpenBrowserTab(url, inPrivate: priv);
-                return new { id, url, inPrivate = priv };
+                return new { id, url, inPrivate = priv, closeCommand = $"close {id}" };
             }
 
             case "goto":
@@ -1850,6 +1850,9 @@ public partial class MainWindow : Window
             {
                 var b = Tab();
                 CloseTab(b.Id);
+                // UI의 닫기 버튼과 달리 에이전트 호출은 탭띠를 직접 지우지 않는다.
+                // 네이티브 View뿐 아니라 화면의 탭·선택 상태도 함께 정리한다.
+                Post(new { t = "tab.closed", id = b.Id });
                 return new { id = b.Id, closed = true };
             }
 

@@ -322,3 +322,11 @@ controlled error if reporting fails. Close the running app and retry with `Agent
 Run report checks with `dotnet run --project tests/InstallerChecks/InstallerChecks.csproj -c Release`.
 Installer builds also test the actual published helper with a read-only temporary directory before
 packaging. These checks do not modify the user's installation or application data.
+
+## 1.8.3 agent browser tab cleanup
+
+Agent guidance now requires closing task tabs it opened after gathering the required information
+or finishing the task, then verifying cleanup with `tabs`. Existing user tabs and tabs explicitly
+requested to stay open are preserved. The `open` response includes the tab's `closeCommand`.
+Fixed `close` removing the native browser while leaving its tab visible in the UI.
+Update with `AgentCLIHub-Setup-1.8.3.0.exe` and restart the app to apply the guidance to CLI launches.

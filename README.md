@@ -564,3 +564,11 @@ Codex는 `-p agentclihub`와 `agentclihub.config.toml`을 사용하며, 처음 �
 결과 기록 검사: `dotnet run --project tests/InstallerChecks/InstallerChecks.csproj -c Release`.
 설치본 빌드는 실제 배포 도우미를 읽기 전용 임시 폴더 조건에서 검사한 뒤 패키징합니다.
 이 검사는 사용자의 설치·데이터를 변경하지 않습니다.
+
+## 1.8.3 에이전트 브라우저 탭 정리
+
+에이전트 지침에 데이터 수집·작업 완료 후 직접 연 작업용 탭을 `close`로 닫고,
+`tabs`로 정리를 확인하도록 명시했습니다. 기존 사용자 탭과 유지 요청한 탭은 보존합니다.
+`open` 응답에도 해당 탭의 `closeCommand`를 제공합니다.
+에이전트의 `close`가 네이티브 브라우저만 제거하고 화면의 탭 표시를 남기던 문제도 수정했습니다.
+`AgentCLIHub-Setup-1.8.3.0.exe`로 업데이트한 뒤 앱을 다시 시작하면 새 지침이 CLI 실행에 적용됩니다.
