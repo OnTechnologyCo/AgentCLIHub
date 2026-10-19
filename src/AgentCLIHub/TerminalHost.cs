@@ -44,6 +44,7 @@ public sealed class TerminalHost : IDisposable
     /// <summary>claude 계정의 설정 폴더(<c>CLAUDE_CONFIG_DIR</c>). 기본 계정이면 기본 폴더다.</summary>
     public string ClaudeHome => Accounts.ClaudeHomeOf(Account);
     public string ClaudeHistoryHome => Accounts.ClaudeModeOf(Account) == ClaudeMode.Token ? CliProfile.ClaudeHome : ClaudeHome;
+    public string AntigravityHome => AntigravityAccounts.HomeOf(Account);
 
     /// <summary>CLI 가 뜬 시각. 그 뒤에 쓰인 기록이 이 탭의 대화다(<see cref="SessionFinder"/>).</summary>
     public DateTime StartedUtc { get; private set; } = DateTime.MaxValue;
@@ -363,7 +364,7 @@ public sealed class TerminalHost : IDisposable
 
         if (Cli.Kind == CliKind.Antigravity && HandoffPath is { Length: > 0 } handoff)
         {
-            var imported = AntigravityTransfer.FindSession(Cwd, handoff);
+            var imported = AntigravityTransfer.FindSession(Cwd, handoff, AntigravityHome);
             if (imported is not null) resume = ResumeMode.Session(imported.Id);
             else
             {
@@ -390,6 +391,8 @@ public sealed class TerminalHost : IDisposable
                                  : Accounts.ClaudeModeOf(Account) == ClaudeMode.Login);
         if (Cli.Kind == CliKind.Codex && Account.Length > 0) Accounts.PrepareCodexHome(CodexHome, _log);
         if (claudeDir) Accounts.PrepareClaudeHome(ClaudeHome, _log);
+        if (Cli.Kind == CliKind.Antigravity && Account.Length > 0)
+            System.IO.Directory.CreateDirectory(AntigravityAccounts.ProfileOf(Account));
 
         if (!IsLogin && Cli.Kind == CliKind.Claude && resume.SessionId is { Length: > 0 } resumeId)
         {
@@ -421,6 +424,8 @@ public sealed class TerminalHost : IDisposable
             // 로그인도 **그 계정 폴더 안에서** 한다 — 기본 계정의 로그인은 건드리지 않는다.
             if (Cli.Kind == CliKind.Codex) env["CODEX_HOME"] = CodexHome;
             else if (claudeDir) env["CLAUDE_CONFIG_DIR"] = ClaudeHome;
+            else if (Cli.Kind == CliKind.Antigravity)
+                foreach (var (key, value) in AntigravityAccounts.EnvironmentFor(AntigravityAccounts.ProfileOf(Account))) env[key] = value;
         }
 
         // 로그인 페이지는 **InPrivate 탭**으로 연다(도우미가 `open … --private` 로 보낸다). 앱 브라우저에 이미
@@ -465,7 +470,7 @@ public sealed class TerminalHost : IDisposable
                 string? newId = null;
                 if (resume.SessionId is { Length: > 0 } sid) KnownSessionId = sid;
                 else if (resume.Fresh && Cli.Kind == CliKind.Claude) KnownSessionId = newId = Guid.NewGuid().ToString();
-                else if (!resume.Fresh && Cli.SupportsTransfer) KnownSessionId = SessionFinder.Latest(Cli, Cwd, CodexHome, ClaudeHistoryHome)?.Id;
+                else if (!resume.Fresh && Cli.SupportsTransfer) KnownSessionId = SessionFinder.Latest(Cli, Cwd, CodexHome, ClaudeHistoryHome, AntigravityHome)?.Id;
 
                 line = Cli.BuildCommandLine(loc.CommandHead(), cfg, resume, Cwd, CodexHome, newId,
                                             claudeDir ? ClaudeHome : null);
@@ -562,9 +567,12 @@ public sealed class TerminalHost : IDisposable
     {
         why = "";
         if (Account.Length == 0) return true;
-        if (!Cli.SupportsAccounts)
+        if (Cli.Kind == CliKind.Antigravity)
         {
-            why = "Antigravity 는 CLI 에 로그인한 계정을 사용합니다. 기본 계정으로 탭을 여세요.";
+            var profile = AntigravityAccounts.ProfileOf(Account);
+            foreach (var (key, value) in AntigravityAccounts.EnvironmentFor(profile)) env[key] = value;
+            if (AntigravityAccounts.State(profile).LoggedIn) return true;
+            why = "이 Antigravity 계정의 로그인이 필요합니다 — [설정] → [계정]에서 [로그인]을 누르세요.";
             return false;
         }
 

@@ -338,7 +338,8 @@ public partial class MainWindow : Window
                 break;
 
             case "account.rename":
-                RenameAccount(m["id"]?.GetValue<string>() ?? "", m["name"]?.GetValue<string>() ?? "");
+                RenameAccount(m["id"]?.GetValue<string>() ?? "", m["name"]?.GetValue<string>() ?? "",
+                              m["backend"]?.GetValue<string>() ?? "");
                 break;
 
             case "account.remove":
@@ -556,9 +557,12 @@ public partial class MainWindow : Window
         SaveTabs();
     }
 
-    /// <summary>탭 배지에 붙일 계정 이름. 기본 계정은 빈 값이다 — 배지가 늘 "CC·기본" 이면 소음일 뿐이다.</summary>
-    private static string AccountLabel(CliProfile cli, string account) =>
-        account.Length == 0 ? "" : Accounts.View(Settings.Load(), cli, account).Label;
+    /// <summary>탭 배지에 붙일 계정 이름. 이름을 바꾸지 않은 기본 계정은 생략한다.</summary>
+    private static string AccountLabel(CliProfile cli, string account)
+    {
+        var label = Accounts.View(Settings.Load(), cli, account).Label;
+        return account.Length == 0 && label == "기본" ? "" : label;
+    }
 
     /// <summary>
     /// 브라우저 탭을 연다. **CLI 탭과 같은 탭띠에 나란히 선다** — 따로 창을 띄우면
@@ -921,7 +925,9 @@ public partial class MainWindow : Window
     private HashSet<string> Claimed(TerminalHost h) =>
         _tabs.Values
             .Where(o => !ReferenceEquals(o, h) && !o.IsLogin && o.Cli == h.Cli &&
-                        (h.Cli.Kind == CliKind.Claude || string.Equals(o.CodexHome, h.CodexHome, StringComparison.OrdinalIgnoreCase)))
+                        (h.Cli.Kind == CliKind.Claude || string.Equals(
+                            h.Cli.Kind == CliKind.Antigravity ? o.AntigravityHome : o.CodexHome,
+                            h.Cli.Kind == CliKind.Antigravity ? h.AntigravityHome : h.CodexHome, StringComparison.OrdinalIgnoreCase)))
             .Select(o => o.KnownSessionId)
             .Where(x => !string.IsNullOrEmpty(x))
             .Select(x => x!)
@@ -1005,10 +1011,10 @@ public partial class MainWindow : Window
         SessionRef? source;
         if (host.Cli.Kind == CliKind.Antigravity && host.HandoffPath is { Length: > 0 } handoff)
         {
-            source = AntigravityTransfer.FindSession(host.Cwd, handoff);
+            source = AntigravityTransfer.FindSession(host.Cwd, handoff, host.AntigravityHome);
             if (source is null) return (null, AntigravityTransfer.ReadHandoff(handoff));
         }
-        else source = SessionFinder.Current(host.Cli, host.Cwd, host.CodexHome, host.StartedUtc, host.KnownSessionId, claimed, host.ClaudeHistoryHome);
+        else source = SessionFinder.Current(host.Cli, host.Cwd, host.CodexHome, host.StartedUtc, host.KnownSessionId, claimed, host.ClaudeHistoryHome, host.AntigravityHome);
         // 계정별 폴더가 분리되어 있어도, 앞선 전환 때 전달한 원본 파일을 다시 찾는다.
         if (source is null && host.Cli.Kind == CliKind.Claude && host.ResumeTranscriptPath is { } path && File.Exists(path))
             source = new SessionRef(host.Cli, Path.GetFileNameWithoutExtension(path), path, File.GetLastWriteTimeUtc(path));
@@ -1129,6 +1135,7 @@ public partial class MainWindow : Window
     /// <summary>그 계정의 일반 로그인 — 처음 더할 때 고른 방식 그대로.</summary>
     private static LoginKind LoginKindOf(CliProfile cli, Account acc) =>
         cli.Kind == CliKind.Codex ? LoginKind.Codex
+        : cli.Kind == CliKind.Antigravity ? LoginKind.Antigravity
         : acc.Login switch { "sso" => LoginKind.ClaudeSso, "console" => LoginKind.ClaudeConsole, _ => LoginKind.Claude };
 
     private void LoginAccount(string id)
@@ -1160,7 +1167,8 @@ public partial class MainWindow : Window
     private void OpenLoginTab(CliProfile cli, Account acc, LoginKind kind)
     {
         var id = "t" + (++_nextTab);
-        var cwd = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var cwd = cli.Kind == CliKind.Antigravity ? AntigravityAccounts.ProfileOf(acc.Id)
+            : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         var alias = kind == LoginKind.ClaudeSetupToken ? $"{acc.Name} 토큰" : $"{acc.Name} 로그인";
         _alias[id] = alias;
 
@@ -1193,6 +1201,9 @@ public partial class MainWindow : Window
             LoginKind.ClaudeSetupToken =>
                 $"'{acc.Name}' 토큰 받기: 브라우저가 열리면 **그 계정으로** 로그인해 승인하세요. 이미 다른 계정으로 로그인돼 있으면 " +
                 "그 계정의 토큰이 만들어집니다 — 먼저 로그아웃하거나 계정을 바꾸세요. 토큰이 화면에 찍히면 자동으로 저장합니다.",
+            LoginKind.Antigravity =>
+                $"'{acc.Name}' 로그인: 터미널에 표시된 Google 로그인 안내를 따라 원하는 계정으로 승인하세요. " +
+                "코드를 요구하면 이 터미널에 붙여 넣으세요. 로그인 완료 후 /exit로 종료하면 계정 목록이 갱신됩니다.",
             LoginKind.Codex =>
                 $"'{acc.Name}' 로그인: 브라우저가 열리면 **그 계정으로** 로그인하세요. 이미 다른 계정으로 로그인돼 있으면 " +
                 "로그아웃하거나 다른 계정으로 로그인하세요. 끝나면 이 계정 폴더에 로그인이 저장됩니다.",
@@ -1234,6 +1245,17 @@ public partial class MainWindow : Window
             }
             else Log($"'{acc.Name}' Codex 로그인이 끝나지 않았습니다(코드 {code}) — [로그인] 으로 다시 하세요.", "w");
         }
+        else if (cli.Kind == CliKind.Antigravity)
+        {
+            var state = AntigravityAccounts.State(AntigravityAccounts.ProfileOf(accountId));
+            if (state.LoggedIn)
+            {
+                acc.Email = state.Email;
+                c.Save();
+                Log($"'{acc.Name}' Antigravity 계정에 로그인했습니다.", "i");
+            }
+            else Log($"'{acc.Name}' Antigravity 로그인이 완료되지 않았습니다 — [로그인]으로 다시 진행하세요.", "w");
+        }
         else if (kind == LoginKind.ClaudeSetupToken)
         {
             if (Accounts.ClaudeToken(accountId) is null)
@@ -1271,26 +1293,23 @@ public partial class MainWindow : Window
         RefreshUsage();
     }
 
-    private void RenameAccount(string id, string name)
+    private void RenameAccount(string id, string name, string backend)
     {
         var c = Settings.Load();
         var acc = Accounts.Find(c, id);
-        if (acc is null) return;
-        name = (name ?? "").Trim();
-        if (name.Length > 20) name = name[..20];
-        if (name.Length == 0 || name == "기본") { PostConf(); return; }
-        if (c.Accounts.Any(a => a != acc && a.Backend == acc.Backend && a.Name == name))
+        var cli = CliProfile.For(acc?.Backend ?? backend);
+        if (cli is null) return;
+        if (!Accounts.Rename(c, cli, id, name, out var error))
         {
-            Log($"'{name}' 은 이미 있는 계정 이름입니다.", "w");
+            Log(error, "w");
             PostConf();
             return;
         }
-        acc.Name = name;
         c.Save();
         PostConf();
         // 열려 있는 탭 배지도 바꾼다.
-        foreach (var tid in _tabs.Where(x => x.Value.Account == id).Select(x => x.Key))
-            Post(new { t = "tab.account", id = tid, account = id, accountName = name });
+        foreach (var tid in _tabs.Where(x => x.Value.Account == id && x.Value.Cli == cli).Select(x => x.Key))
+            Post(new { t = "tab.account", id = tid, account = id, accountName = AccountLabel(cli, id) });
     }
 
     /// <summary>
@@ -1403,7 +1422,8 @@ public partial class MainWindow : Window
                     loggedIn = a.LoggedIn,
                     note = a.Note,
                     // [폴더] 단추가 여는 곳 — 그 계정의 설정 폴더(claude) · 홈(codex). 기본 계정은 단추가 없다.
-                    home = a.IsDefault ? "" : claude ? Accounts.ClaudeHomeOf(a.Id) : Accounts.CodexHomeOf(a.Id),
+                    home = a.IsDefault ? "" : claude ? Accounts.ClaudeHomeOf(a.Id)
+                        : a.Cli.Kind == CliKind.Antigravity ? AntigravityAccounts.ProfileOf(a.Id) : Accounts.CodexHomeOf(a.Id),
                     // claude 로그인 방식(빈 값 · sso · console). [다시 로그인] 이 같은 방식으로 열린다.
                     login = claude ? Accounts.Find(c, a.Id)?.Login ?? "" : "",
                     mode = mode switch { ClaudeMode.Login => "login", ClaudeMode.Token => "token", _ => "" },

@@ -63,6 +63,8 @@ public static class SessionStore
             AddClaude(Accounts.ClaudeHomeOf(a.Id), a.Id);
         try { all.AddRange(Codex(CliProfile.CodexHome, "")); } catch { }
         try { all.AddRange(AntigravitySessions.Recent()); } catch { }
+        foreach (var a in s.Accounts.Where(a => CliProfile.For(a.Backend) == CliProfile.Antigravity))
+            try { all.AddRange(AntigravitySessions.Recent(AntigravityAccounts.HomeOf(a.Id)).Select(e => e with { Account = a.Id })); } catch { }
         foreach (var a in s.Accounts.Where(a => CliProfile.For(a.Backend) == CliProfile.Codex))
             try { all.AddRange(Codex(Accounts.CodexHomeOf(a.Id), a.Id)); } catch { }
         return all.OrderByDescending(e => e.When).Take(max).ToList();
@@ -237,6 +239,6 @@ public static class SessionStore
         when = e.When.ToString("yyyy-MM-dd HH:mm"),
         title = e.Title,
         account = e.Account,
-        accountName = e.Account.Length > 0 ? Accounts.View(s, CliProfile.ForOrDefault(e.Backend), e.Account).Label : "",
+        accountName = Accounts.View(s, CliProfile.ForOrDefault(e.Backend), e.Account).Label,
     }).ToArray();
 }

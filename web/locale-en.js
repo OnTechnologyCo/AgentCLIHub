@@ -1,5 +1,10 @@
 // App interface strings. CLI output and user content are not translated.
 window.AGENTCLIHUB_UI_EN = {
+  "이 계정 폴더에서 Antigravity Google 로그인을 엽니다": "Open Antigravity Google sign-in in this account's folder",
+  "이 Antigravity 계정의 로그인·설정·대화 폴더를 엽니다": "Open this Antigravity account's sign-in, settings and conversation folder",
+  "이 계정 폴더에 로그인해 둔 Antigravity": "Antigravity signed in to this account folder",
+  "• Antigravity 계정: [＋ 추가] 후 터미널의 Google 로그인 안내를 따르세요. 로그인 완료 후 /exit로 종료하세요. 로그인·설정·대화 기록은 계정마다 따로 저장됩니다.\n": "• Antigravity accounts: click [＋ Add], follow the Google sign-in instructions in the terminal, then use /exit after signing in. Sign-in, settings and conversation history are stored separately per account.\n",
+  "• 기본 계정도 [이름]으로 표시명을 바꿀 수 있습니다.\n": "• Use [Name] to rename default accounts too.\n",
   "화면 언어": "Interface language",
   "언어": "Language",
   "언어는 즉시 적용하고 자동으로 저장합니다.": "Language changes apply immediately and are saved automatically.",

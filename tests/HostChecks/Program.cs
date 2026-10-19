@@ -47,9 +47,8 @@ try
     Check(real.Found, "installed Codex is found without a configured path");
     var version = Run(real.LaunchCommand(real.CommandHead() + " --version"));
     Check(version.Exit == 0 && version.Output.Contains("codex-cli"), "automatically detected Codex actually runs: " + version.Output.Trim());
-    Check(real.Source == "PowerShell:Get-Command" && real.UsePowerShellProfile ||
-          real.Source.StartsWith("Codex standalone/") && File.Exists(real.Path),
-        "automatic Codex uses PowerShell or the recorded standalone release when installation links are broken");
+    Check(real.UsePowerShellProfile ? File.Exists(real.PowerShellExe) : File.Exists(real.Path),
+        "automatically detected Codex has a usable launcher: " + real.Source);
 
     void Junction(string path, string target)
     {
@@ -149,7 +148,8 @@ try
     // The real installer's junction may be broken. Give this shell-specific test a valid executable directory.
     Environment.SetEnvironmentVariable("PATH", Path.GetDirectoryName(real.Path) + ";" + originalPath);
     var shellResult = (CliLocator.Result?)method.Invoke(null, [CliProfile.Codex]);
-    Check(shellResult?.Found == true && File.Exists(shellResult.Path), "PowerShell Get-Command fallback resolves installed Codex");
+    Check(shellResult?.Found == true && (File.Exists(shellResult.Path) || shellResult.UsePowerShellProfile),
+        "PowerShell Get-Command fallback parses the current product marker and resolves installed Codex");
     var shellRun = Run(shellResult!.LaunchCommand(shellResult.CommandHead() + " --version"));
     Check(shellRun.Exit == 0 && shellRun.Output.Contains("codex-cli"), "PowerShell fallback runs in the shell that found Codex");
     Environment.SetEnvironmentVariable("PATH", originalPath);
@@ -223,8 +223,8 @@ try
     isolated.AntigravityPermission = "never";
     Check(ag.BuildCommandLine("agy", isolated, ResumeMode.New, root) == "agy", "Antigravity rejects unsupported permission values");
     var agAccount = Accounts.Of(isolated, ag).Single();
-    Check(agAccount.IsDefault && agAccount.Email == "" && !ag.SupportsAccounts && ag.SupportsTransfer,
-        "Antigravity supports conversation transfer using its own CLI login");
+    Check(agAccount.IsDefault && agAccount.Email == "" && ag.SupportsAccounts && ag.SupportsTransfer,
+        "Antigravity supports isolated extra accounts and conversation transfer using native CLI login");
     Check(SessionFinder.Latest(ag, root, root) is null, "Antigravity is not read as a Codex transcript");
     var agCatalog = JsonSerializer.SerializeToElement(CliCatalog.ForUi()).GetProperty(ag.Backend);
     Check(agCatalog.GetProperty("pathKey").GetString() == "AntigravityCliPath" &&

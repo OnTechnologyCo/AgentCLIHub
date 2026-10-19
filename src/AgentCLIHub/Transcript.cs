@@ -848,7 +848,7 @@ public static class SessionFinder
     /// <param name="knownId">띄울 때 우리가 준 번호(없으면 null).</param>
     /// <param name="claimed">같은 CLI·같은 홈의 **다른 탭**이 쥐고 있는 번호. 이것들은 이 탭 것이 아니다.</param>
     public static SessionRef? Current(CliProfile cli, string cwd, string codexHome, DateTime startedUtc,
-                                      string? knownId, ISet<string> claimed, string? claudeHome = null)
+                                      string? knownId, ISet<string> claimed, string? claudeHome = null, string? antigravityHome = null)
     {
         if (!cli.SupportsTransfer) return null;
         try
@@ -856,7 +856,7 @@ public static class SessionFinder
             return cli.Kind switch
             {
                 CliKind.Claude => Claude(cwd, startedUtc, knownId, claimed, claudeHome),
-                CliKind.Antigravity => AntigravitySessions.Current(cwd, startedUtc, knownId, claimed),
+                CliKind.Antigravity => AntigravitySessions.Current(cwd, startedUtc, knownId, claimed, antigravityHome),
                 _ => Codex(cwd, codexHome, startedUtc, knownId, claimed),
             };
         }
@@ -864,8 +864,8 @@ public static class SessionFinder
     }
 
     /// <summary>띄우기 **전에** 그 폴더에서 이어갈 대화 — <c>--continue</c> · <c>resume --last</c> 가 고를 그것.</summary>
-    public static SessionRef? Latest(CliProfile cli, string cwd, string codexHome, string? claudeHome = null) =>
-        Current(cli, cwd, codexHome, DateTime.MaxValue, null, new HashSet<string>(), claudeHome);
+    public static SessionRef? Latest(CliProfile cli, string cwd, string codexHome, string? claudeHome = null, string? antigravityHome = null) =>
+        Current(cli, cwd, codexHome, DateTime.MaxValue, null, new HashSet<string>(), claudeHome, antigravityHome);
 
     private static SessionRef? Claude(string cwd, DateTime startedUtc, string? knownId, ISet<string> claimed, string? home)
     {
@@ -908,7 +908,7 @@ public static class SessionFinder
         var cli = CliProfile.ForOrDefault(entry.Backend);
         if (cli.Kind == CliKind.Claude) return FindClaude(entry.Id, Accounts.ClaudeHomeOf(entry.Account));
         if (cli.Kind == CliKind.Antigravity)
-            return AntigravitySessions.Current(entry.Cwd, DateTime.MaxValue, entry.Id, new HashSet<string>()) is { } ag && ag.Id == entry.Id ? ag : null;
+            return AntigravitySessions.Current(entry.Cwd, DateTime.MaxValue, entry.Id, new HashSet<string>(), AntigravityAccounts.HomeOf(entry.Account)) is { } ag && ag.Id == entry.Id ? ag : null;
         if (!Guid.TryParse(entry.Id, out _)) return null;
         var root = Path.Combine(Accounts.CodexHomeOf(entry.Account), "sessions");
         if (!Directory.Exists(root)) return null;

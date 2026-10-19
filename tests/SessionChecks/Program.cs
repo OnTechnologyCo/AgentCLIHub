@@ -14,6 +14,9 @@ void Check(bool condition, string name)
 }
 try
 {
+    AccountChecks.Run(root, Check);
+    TransferMatrixChecks.Run(root, Check);
+    if (args.Length == 2 && args[0] == "--agy-smoke") await AccountChecks.NativeSmoke(root, args[1], Check);
     var main = Path.Combine(root, "default-home");
     var sourceHome = Path.Combine(root, "source-home");
     var targetHome = Path.Combine(root, "target-home");

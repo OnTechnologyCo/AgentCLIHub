@@ -185,6 +185,7 @@ public static class CliLocator
 
     private static Result? FindWithPowerShell(CliProfile profile)
     {
+        const string marker = "AGENTCLIHUB_COMMAND:";
         var name = profile.CommandName;
         foreach (var shell in Where("pwsh.exe").Append(WindowsPowerShell).Distinct(StringComparer.OrdinalIgnoreCase))
         {
@@ -193,7 +194,7 @@ public static class CliLocator
             {
                 var script = "$ErrorActionPreference='Stop'; $c=Get-Command " + PsLiteral(name) +
                     " -ErrorAction Stop; if ($c.CommandType -eq 'Alias') { $c=$c.ResolvedCommand }; " +
-                    "[Console]::WriteLine('AGENTCLIHUB_COMMAND:' + (@{path=$c.Path; kind=[string]$c.CommandType} | ConvertTo-Json -Compress))";
+                    "[Console]::WriteLine('" + marker + "' + (@{path=$c.Path; kind=[string]$c.CommandType} | ConvertTo-Json -Compress))";
                 var info = new ProcessStartInfo(shell) { UseShellExecute = false, CreateNoWindow = true,
                     RedirectStandardOutput = true, RedirectStandardError = true,
                     StandardOutputEncoding = Encoding.UTF8 };
@@ -209,9 +210,9 @@ public static class CliLocator
                 var error = process.StandardError.ReadToEndAsync();
                 if (!process.WaitForExit(3000)) { try { process.Kill(entireProcessTree: true); } catch { } continue; }
                 if (!output.Wait(500)) continue;
-                var line = output.Result.Split('\n').LastOrDefault(l => l.StartsWith("AGENTCLIHUB_COMMAND:", StringComparison.Ordinal));
+                var line = output.Result.Split('\n').LastOrDefault(l => l.StartsWith(marker, StringComparison.Ordinal));
                 if (line is null) continue;
-                using var json = JsonDocument.Parse(line[17..]);
+                using var json = JsonDocument.Parse(line[marker.Length..]);
                 var kind = json.RootElement.GetProperty("kind").GetString();
                 var path = json.RootElement.GetProperty("path").GetString();
                 if (kind == "Function")

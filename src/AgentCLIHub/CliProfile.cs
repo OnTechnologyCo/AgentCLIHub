@@ -26,6 +26,7 @@ public enum LoginKind
 
     /// <summary><c>codex login</c>.</summary>
     Codex,
+    Antigravity,
 }
 
 /// <summary>
@@ -74,8 +75,8 @@ public sealed class CliProfile
 
     public static readonly CliProfile[] All = [Claude, Codex, Antigravity];
 
-    // Antigravity 는 CLI 의 로그인을 쓴다. 대화 인계는 지원하며 별도 계정 격리는 하지 않는다.
-    public bool SupportsAccounts => Kind != CliKind.Antigravity;
+    // Additional accounts use isolated provider-owned login storage.
+    public bool SupportsAccounts => true;
     public bool SupportsTransfer => true;
     public string CommandName => Kind switch { CliKind.Claude => "claude", CliKind.Codex => "codex", _ => "agy" };
     public string PathKey => Kind switch
@@ -384,6 +385,7 @@ public sealed class CliProfile
         LoginKind.ClaudeSso => " auth login --sso",
         LoginKind.ClaudeConsole => " auth login --console",
         LoginKind.ClaudeSetupToken => " setup-token",
+        LoginKind.Antigravity => "",
         _ => " login",
     };
 

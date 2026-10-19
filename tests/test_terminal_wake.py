@@ -230,7 +230,7 @@ class TerminalWakeTests(unittest.TestCase):
                 "display": "Antigravity", "memoryFile": "AGENTS.md / GEMINI.md", "models": [],
                 "modelsComplete": False, "modelKey": "AntigravityModel", "effortKey": "AntigravityEffort",
                 "pathKey": "AntigravityCliPath", "efforts": ["low", "medium", "high", "max"],
-                "supportsAccounts": False, "supportsTransfer": True,
+                "supportsAccounts": True, "supportsTransfer": True,
                 "perm": [{"key": "AntigravityPermission", "label": "권한", "choices": ["sandbox", "dangerously-skip-permissions"]}]}},
             accounts=[{"backend": "antigravity_cli", "id": "", "name": "기본", "loggedIn": False}],
             detect={"antigravity_cli": {"found": True, "path": "C:/agy/agy.exe", "source": "PATH"}})
@@ -263,6 +263,38 @@ class TerminalWakeTests(unittest.TestCase):
         self.page.evaluate("showTab('cx')")
         self.page.clock.run_for(100)
         self.assertIn("이 대화 내용은 그대로 유지", self.page.locator(".pane.on .xterm-rows").inner_text())
+
+    def test_default_account_can_be_renamed_without_login_or_delete_controls(self):
+        self.page.locator("#tab-conf").click()
+        self.antigravity_config()
+        row = self.page.locator('.an[data-backend="antigravity_cli"][data-account-id=""]')
+        ops = row.locator("xpath=following-sibling::div[2]")
+        self.assertEqual(ops.get_by_role("button").all_text_contents(), ["이름"])
+        ops.get_by_role("button", name="이름", exact=True).click()
+        row.locator("input").fill("회사 Google")
+        row.locator("input").press("Enter")
+        rename = self.page.evaluate("sent.filter(m => m.t === 'account.rename').at(-1)")
+        self.assertEqual({k: rename[k] for k in ("id", "backend", "name")},
+                         {"id": "", "backend": "antigravity_cli", "name": "회사 Google"})
+        self.page.locator('[data-conf-draft="new-account:antigravity_cli"]').fill("개인 Google")
+        self.page.get_by_role("button", name="＋ Antigravity 계정 추가", exact=True).click()
+        self.assertTrue(self.page.evaluate("sent.some(m => m.t === 'account.add' && m.backend === 'antigravity_cli' && m.name === '개인 Google')"))
+
+    def test_custom_default_name_is_preserved_in_picker_transfer_and_tab(self):
+        self.message(t="newchat", last="codex_cli", items=[{
+            "backend": "codex_cli", "display": "Codex", "found": True, "usable": True,
+            "account": "", "accountName": "회사 GPT", "opts": []}])
+        self.assertIn("회사 GPT", self.page.locator("#plist").inner_text())
+        self.page.locator("#plist button.prow").click()
+        self.open_terminal()
+        self.message(t="tab.account", id="cx", account="", accountName="회사 GPT")
+        self.assertIn("회사 GPT", self.page.locator("#tabs").inner_text())
+        self.message(t="switch", id="cx", loading=False,
+                     **{"from": {"display": "Codex", "account": "", "accountName": "회사 GPT"}},
+                     session={"title": "fixture", "turns": 1},
+                     items=[{"backend": "antigravity_cli", "display": "Antigravity", "account": "", "accountName": "회사 Google", "usable": True, "how": "context"}])
+        self.assertIn("회사 GPT", self.page.locator("#sfrom").inner_text())
+        self.assertIn("회사 Google", self.page.locator("#slist").inner_text())
 
     def test_language_restores_from_settings_and_cached_first_paint(self):
         self.antigravity_config(language="en")
@@ -328,7 +360,7 @@ class TerminalWakeTests(unittest.TestCase):
         self.page.locator("#ag-model-custom").fill("Gemini test model")
         card.locator("select").nth(1).select_option("high")
         card.locator("select").nth(2).select_option("sandbox")
-        self.assertNotIn("Antigravity 계정 추가", self.page.locator("#conf").inner_text())
+        self.assertIn("Antigravity 계정 추가", self.page.locator("#conf").inner_text())
         self.assertEqual(self.page.locator("#usage").inner_text(), "")
         self.message(t="cli.picked", which="antigravity_cli", path="D:/CLI 한글/agy.exe")
         self.page.get_by_role("button", name="저장", exact=True).click()

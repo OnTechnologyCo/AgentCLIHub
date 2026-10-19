@@ -114,7 +114,7 @@ Windows 도구 실행에 필요한 Git Bash 는 설치된 Git 의 `bin` 경로�
   다른 CLI에서 인계받은 탭은 인계 파일을 전달했던 세션을 찾아 복원한다.
 * 1.7.0부터 탭 우클릭의 **다른 CLI·계정으로 이어가기**에서 Claude/Codex와 양방향으로 대화를 옮긴다.
   Antigravity로 넘길 때는 설정에서 선택한 모델로 인계 파일을 읽고, 확인 답변 뒤 다음 요청을 기다린다.
-* 로그인·사용량은 CLI 에서 관리한다(`/usage`). 앱의 별도 계정 추가는 Antigravity 에 적용하지 않는다.
+* 설정 → 계정에서 Antigravity 계정을 추가할 수 있다. 터미널의 Google 로그인 안내를 따르고 완료 후 `/exit`로 종료한다. 사용량은 각 CLI의 `/usage`에서 확인한다.
   브라우저 조작 안내문 자동 주입은 Claude/Codex 에만 적용된다.
 
 공식 안내: [설치·로그인](https://www.antigravity.google/docs/cli/install/),
@@ -128,7 +128,7 @@ Enter. 탭은 그대로(이름·자리·폴더) 두고 안의 CLI 만 갈아 끼
 
 | 넘기기 | 어떻게 | 앞 대화 |
 | --- | --- | --- |
-| Claude Code A → Claude Code B | 같은 대화 파일을 B 계정 폴더로 `claude --resume <번호>`(`projects` 를 같이 쓴다) | **그대로**(도구 호출·생각까지) |
+| Claude Code A → Claude Code B | B 계정으로 `claude --resume <원본 파일 절대 경로>` | **그대로**(도구 호출·생각까지) |
 | Claude Code → Codex | 앞 대화를 Codex 기록 형식으로 옮겨 쓴 **새 대화**를 `codex resume` | 요청·답·도구 호출과 결과를 글로 |
 | Codex → Claude Code | 앞 대화를 Claude 기록 형식으로 옮겨 쓴 **새 대화**를 `claude --resume` | 〃 |
 | Codex A → Codex B | B 계정 홈에 옮겨 쓴 새 대화를 `codex resume` | 〃 |
@@ -565,7 +565,12 @@ Codex는 `-p agentclihub`와 `agentclihub.config.toml`을 사용하며, 처음 �
 설치본 빌드는 실제 배포 도우미를 읽기 전용 임시 폴더 조건에서 검사한 뒤 패키징합니다.
 이 검사는 사용자의 설치·데이터를 변경하지 않습니다.
 
-## 1.8.4 Claude 계정 간 이어하기 · 지난 대화 우클릭
+## 1.8.4 계정 관리 · 대화 이어하기
+
+- **설정 → 계정 → [이름]**으로 Claude·Codex·Antigravity의 기본 계정 이름도 변경할 수 있습니다. 이름은 저장되며 계정 선택·탭·지난 대화·사용량 표시에 반영됩니다.
+- **Antigravity 계정 추가**를 지원합니다. Google 로그인 완료 후 `/exit`로 종료하면 새 대화 및 이어하기에서 선택할 수 있습니다.
+- 제품명 변경 후 PowerShell의 CLI 자동 탐지 결과를 읽지 못하던 문제도 수정했습니다.
+- 추가 Antigravity 계정은 `%LOCALAPPDATA%\AgentCLIHub\accounts\<번호>\profile` 아래에 로그인·설정·대화를 따로 저장합니다. agy의 원래 원격 로그인용 파일 저장 모드를 사용하므로 URL·코드 입력이 필요할 수 있습니다. 기본 Windows 자격 증명을 공유하거나 복사하지 않습니다. 이 동작은 agy 1.4.2에서 확인했습니다.
 
 - Claude Code 계정을 바꿀 때 원본 대화 파일의 절대 경로로 이어갑니다. 계정별 `projects` 폴더가 분리되거나 연결 폴더의 세션 번호 검색이 실패해도 같은 대화를 찾습니다.
 - 지난 대화 목록에 계정별 Claude 기록도 표시합니다. 보조 에이전트 기록은 제외하며, 선택한 기록이 없으면 다른 대화로 대체하지 않습니다.

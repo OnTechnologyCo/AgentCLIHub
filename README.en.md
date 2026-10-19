@@ -55,7 +55,7 @@ New conversation → **Antigravity** → working folder launches `agy` in the bu
 - Permissions: CLI default, `--sandbox`, or `--dangerously-skip-permissions`. A custom PATH wrapper can apply its own options.
 - Resume reads `~/.gemini/antigravity-cli/history.jsonl` and `cache/last_conversations.json`, showing only entries whose conversation `.db` or `.pb` remains. A selection opens with `--conversation <ID>`. Restart restoration uses `--continue` for the folder's latest conversation. Handoff tabs locate the session that received the handoff file.
 - Since 1.7.0, **Continue with another CLI/account** supports transfers both ways with Claude/Codex. A handoff to Antigravity uses the configured model to read the file, acknowledge it, and wait for the next request.
-- Login and usage are managed by the CLI (`/usage`). App-level extra accounts do not apply to Antigravity. Automatic browser guidance injection applies only to Claude/Codex.
+- Add Antigravity accounts under Settings → Accounts. Follow the native Google sign-in instructions in the terminal, then use `/exit` after signing in. Check usage with each CLI's `/usage`. Automatic browser guidance injection applies only to Claude/Codex.
 
 Official guides: [installation/login](https://www.antigravity.google/docs/cli/install/) and [resume](https://www.antigravity.google/docs/cli/commands/resume/).
 
@@ -323,7 +323,12 @@ Run report checks with `dotnet run --project tests/InstallerChecks/InstallerChec
 Installer builds also test the actual published helper with a read-only temporary directory before
 packaging. These checks do not modify the user's installation or application data.
 
-## 1.8.4 Claude account resume and history context menu
+## 1.8.4 account management and conversation resume
+
+- Use **Settings → Accounts → Name** to rename default Claude, Codex and Antigravity accounts too. Names persist across restarts and appear in account pickers, tabs, history and usage labels.
+- **Add Antigravity accounts**, complete Google sign-in and use `/exit`; then select them for new conversations or transfers.
+- Fixed PowerShell CLI discovery parsing after the product rename.
+- Extra Antigravity accounts keep sign-in, settings and history under `%LOCALAPPDATA%\AgentCLIHub\accounts\<id>\profile`. They use agy's native file storage for remote sign-in, which may require opening a URL and pasting a code. Default Windows credentials are neither shared nor copied. This behavior was checked with agy 1.4.2.
 
 - Claude account transfers now resume the original transcript by absolute path, including when account history directories are separate or UUID lookup skips a junction.
 - History includes account-specific Claude transcripts and excludes subagent transcripts. Missing selected sessions are not replaced with unrelated conversations.

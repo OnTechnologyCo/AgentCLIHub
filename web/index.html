@@ -858,7 +858,7 @@ function usageAccounts() {
 }
 
 /** 계정 한 칸의 이름 — "Claude" · "Claude·회사" · "GPT·개인". */
-const acctLabel = a => acctBase(a.backend).name + (a.id ? '·' + a.name : '');
+const acctLabel = a => acctBase(a.backend).name + (a.id || a.name && a.name !== '기본' && a.name !== tr('기본') ? '·' + a.name : '');
 
 /** 고르기 창에 적을 짧은 사용량. 모르면 빈 글 — "—" 를 늘어놓으면 고장으로 보인다. */
 function usageShort(backend, account) {
@@ -1030,10 +1030,10 @@ function renderPick() {
     const nm = document.createElement('span');
     nm.className = 'nm';
     nm.textContent = c.display;
-    if (multi(c.backend)) {
+    if (multi(c.backend) || c.accountName && c.accountName !== '기본') {
       const ac = document.createElement('span');
       ac.className = 'acct';
-      ac.textContent = ' · ' + (c.account ? c.accountName : tr('기본'));
+      ac.textContent = ' · ' + accountText(c.accountName);
       nm.appendChild(ac);
     }
     const k = document.createElement('span');
@@ -1147,7 +1147,7 @@ function renderSwap() {
   if (!SWAP) return;
   const f = SWAP.from || {};
   const use = usageShort(f.backend, f.account);
-  $('sfrom').textContent = tr`지금: ${f.display} · ${f.account ? f.accountName : tr('기본')} 계정` + (use ? tr`  (사용량 ${use})` : '');
+  $('sfrom').textContent = tr`지금: ${f.display} · ${accountText(f.accountName)} 계정` + (use ? tr`  (사용량 ${use})` : '');
   renderSwapSession();
 
   const list = $('slist');
@@ -1181,7 +1181,7 @@ function renderSwap() {
     nm.textContent = `${c.display} · `;
     const ac = document.createElement('span');
     ac.className = 'acct';
-    ac.textContent = (c.account ? c.accountName : tr('기본')) + tr(' 계정');
+    ac.textContent = accountText(c.accountName) + tr(' 계정');
     nm.appendChild(ac);
     const k = document.createElement('span');
     k.className = 'k';
@@ -1635,10 +1635,14 @@ function effortChoices(backend, model) {
  * 설정 [계정] 카드의 한 줄 — 이름 · 상태 · 단추. 기본 계정은 단추가 없다(로그인은 CLI 가 원래 하던 대로다).
  * 지우기는 **두 번 누른다** — 로그인과 그 계정 폴더(codex 는 그 계정에서 이어간 기록까지)가 같이 지워진다.
  */
+function accountText(name) { return name && name !== '기본' ? name : tr('기본'); }
+
 function accountRow(grid, a) {
   const nm = document.createElement('div');
   nm.className = 'an';
-  nm.textContent = a.id ? a.name : tr('기본');
+  nm.textContent = accountText(a.name);
+  nm.dataset.accountId = a.id || '';
+  nm.dataset.backend = a.backend;
   nm.title = a.id ? tr`계정 번호 ${a.id}` : tr('CLI 에 원래 로그인해 둔 계정');
 
   const info = document.createElement('div');
@@ -1660,7 +1664,8 @@ function accountRow(grid, a) {
     info.appendChild(tag);
   }
   info.append(tr(a.note || ''));
-  if (a.home) info.title = (a.backend === 'codex_cli' ? 'CODEX_HOME: ' : tr('설정 폴더(CLAUDE_CONFIG_DIR): ')) + a.home;
+  if (a.home) info.title = (a.backend === 'antigravity_cli' ? 'Antigravity HOME: '
+    : a.backend === 'codex_cli' ? 'CODEX_HOME: ' : tr('설정 폴더(CLAUDE_CONFIG_DIR): ')) + a.home;
 
   const ops = document.createElement('div');
   ops.className = 'ao';
@@ -1675,11 +1680,31 @@ function accountRow(grid, a) {
   };
 
   grid.append(nm, info, ops);
+  op(tr('이름'), tr('계정 이름을 바꿉니다'), () => {
+    const inp = document.createElement('input');
+    inp.value = a.name;
+    inp.maxLength = 20;
+    nm.replaceChildren(inp);
+    inp.focus();
+    inp.select();
+    const done = () => {
+      const v = inp.value.trim();
+      if (v && v !== a.name) wv?.postMessage({ t: 'account.rename', id: a.id, backend: a.backend, name: v });
+      else nm.textContent = a.name;
+    };
+    inp.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); inp.blur(); }
+      else if (e.key === 'Escape') { e.stopPropagation(); inp.value = a.name; inp.blur(); }
+    });
+    inp.addEventListener('blur', done, { once: true });
+  });
+
   if (!a.id) return;
 
   const how = a.login === 'sso' ? 'claude auth login --sso' : a.login === 'console' ? 'claude auth login --console' : 'claude auth login';
   op(a.loggedIn && a.mode !== 'token' ? tr('다시 로그인') : tr('로그인'), a.backend === 'claude_code'
        ? tr`이 계정 폴더로 ${how} 를 엽니다 — 평소 하던 로그인 그대로입니다. 기본 계정의 로그인은 그대로 남습니다`
+       : a.backend === 'antigravity_cli' ? tr('이 계정 폴더에서 Antigravity Google 로그인을 엽니다')
        : tr('이 계정 폴더로 codex login 을 엽니다'),
      () => wv?.postMessage({ t: 'account.login', id: a.id }));
 
@@ -1713,28 +1738,11 @@ function accountRow(grid, a) {
     });
     tokenButton.dataset.tokenAccount = a.id;
   }
-  if (a.home) op(tr('폴더'), a.backend === 'codex_cli' ? tr('이 계정의 CODEX_HOME 폴더를 엽니다')
+  if (a.home) op(tr('폴더'), a.backend === 'antigravity_cli' ? tr('이 Antigravity 계정의 로그인·설정·대화 폴더를 엽니다')
+                            : a.backend === 'codex_cli' ? tr('이 계정의 CODEX_HOME 폴더를 엽니다')
                                                   : tr('이 계정의 설정 폴더(CLAUDE_CONFIG_DIR)를 엽니다'),
                  () => wv?.postMessage({ t: 'folder.open', path: a.home }));
 
-  op(tr('이름'), tr('계정 이름을 바꿉니다'), () => {
-    const inp = document.createElement('input');
-    inp.value = a.name;
-    inp.maxLength = 20;
-    nm.replaceChildren(inp);
-    inp.focus();
-    inp.select();
-    const done = () => {
-      const v = inp.value.trim();
-      if (v && v !== a.name) wv?.postMessage({ t: 'account.rename', id: a.id, name: v });
-      else nm.textContent = a.name;
-    };
-    inp.addEventListener('keydown', e => {
-      if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); inp.blur(); }
-      else if (e.key === 'Escape') { e.stopPropagation(); inp.value = a.name; inp.blur(); }
-    });
-    inp.addEventListener('blur', done, { once: true });
-  });
 
   op(tr('삭제'), tr('이 계정의 로그인과 계정 폴더를 지웁니다'), b => {
     if (b.dataset.armed !== '1') {
@@ -1942,6 +1950,8 @@ function renderConf() {
     tr('[토큰] 은 대안(setup-token 1년 토큰 · 추론 전용)입니다.\n') +
     tr('• Codex 계정: [＋ 추가] 를 누르면 그 계정 폴더로 `codex login` 이 열립니다. 계정마다 폴더(CODEX_HOME)가 따로고, ') +
     tr('기본 계정의 config.toml · AGENTS.md · skills · plugins · 샌드박스 설정을 따라갑니다.\n') +
+    tr('• Antigravity 계정: [＋ 추가] 후 터미널의 Google 로그인 안내를 따르세요. 로그인 완료 후 /exit로 종료하세요. 로그인·설정·대화 기록은 계정마다 따로 저장됩니다.\n') +
+    tr('• 기본 계정도 [이름]으로 표시명을 바꿀 수 있습니다.\n') +
     tr('• 로그인 페이지가 열린 브라우저가 이미 다른 계정으로 로그인돼 있으면 그 계정이 승인됩니다 — 먼저 로그아웃하거나 계정을 바꾸세요.\n') +
     tr('• 같은 CLI 계정끼리는 같은 대화를 그대로 잇고(Claude), 그 밖에는 앞 대화를 받을 CLI 의 기록으로 옮겨 써서 이어갑니다. 원본은 그대로 남습니다.'));
 

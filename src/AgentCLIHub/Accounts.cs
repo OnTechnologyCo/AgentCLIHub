@@ -19,8 +19,8 @@ public sealed record AccountView(CliProfile Cli, string Id, string Name, string 
 {
     public bool IsDefault => Id.Length == 0;
 
-    /// <summary>탭 배지·사용량 줄에 찍힐 짧은 이름. 기본 계정은 "기본" 이다.</summary>
-    public string Label => IsDefault ? "기본" : Name;
+    /// <summary>탭 배지·사용량 줄에 찍힐 이름. 기본 계정도 사용자가 바꿀 수 있다.</summary>
+    public string Label => Name;
 }
 
 /// <summary>claude 계정이 무엇으로 로그인돼 있나.</summary>
@@ -162,7 +162,7 @@ public static class Accounts
     /// <summary>이 CLI 의 계정들. **기본 계정이 맨 앞이다** — 그 뒤는 넣은 순서.</summary>
     public static List<AccountView> Of(Settings s, CliProfile cli)
     {
-        var list = new List<AccountView> { DefaultView(cli) };
+        var list = new List<AccountView> { DefaultView(s, cli) };
         if (!cli.SupportsAccounts) return list;
         foreach (var a in s.Accounts.Where(a => CliProfile.For(a.Backend) == cli))
             list.Add(ExtraView(cli, a));
@@ -173,9 +173,37 @@ public static class Accounts
 
     public static AccountView View(Settings s, CliProfile cli, string? id)
     {
-        if (!cli.SupportsAccounts) return DefaultView(cli);
+        if (!cli.SupportsAccounts) return DefaultView(s, cli);
         var a = Find(s, id);
-        return a is not null && CliProfile.For(a.Backend) == cli ? ExtraView(cli, a) : DefaultView(cli);
+        return a is not null && CliProfile.For(a.Backend) == cli ? ExtraView(cli, a) : DefaultView(s, cli);
+    }
+
+    public static string DefaultName(Settings settings, CliProfile cli) =>
+        settings.DefaultAccountNames is not null && settings.DefaultAccountNames.TryGetValue(cli.Backend, out var name) &&
+        !string.IsNullOrWhiteSpace(name) ? name.Trim() : "기본";
+
+    private static AccountView DefaultView(Settings settings, CliProfile cli) =>
+        DefaultView(cli) with { Name = DefaultName(settings, cli) };
+
+    public static bool Rename(Settings settings, CliProfile cli, string id, string name, out string error)
+    {
+        error = "";
+        name = (name ?? "").Trim();
+        if (name.Length > 20) name = name[..20];
+        var account = Find(settings, id);
+        if (id.Length > 0 && (account is null || account.Backend != cli.Backend))
+        { error = "그런 계정이 없습니다."; return false; }
+        if (name.Length == 0) { error = "계정 이름을 입력하세요."; return false; }
+        if (settings.Accounts.Any(a => a.Id != id && a.Backend == cli.Backend && a.Name == name) ||
+            (id.Length > 0 && DefaultName(settings, cli) == name))
+        { error = $"'{name}' 은 이미 있는 계정 이름입니다."; return false; }
+        if (account is not null) account.Name = name;
+        else
+        {
+            settings.DefaultAccountNames ??= [];
+            settings.DefaultAccountNames[cli.Backend] = name;
+        }
+        return true;
     }
 
     private static AccountView DefaultView(CliProfile cli)
@@ -199,6 +227,12 @@ public static class Accounts
 
     private static AccountView ExtraView(CliProfile cli, Account a)
     {
+        if (cli.Kind == CliKind.Antigravity)
+        {
+            var state = AntigravityAccounts.State(AntigravityAccounts.ProfileOf(a.Id));
+            return new AccountView(cli, a.Id, a.Name, state.Email.Length > 0 ? state.Email : a.Email, state.LoggedIn,
+                state.LoggedIn ? "이 계정 폴더에 로그인해 둔 Antigravity" : "로그인 필요 — [로그인] 을 누르세요");
+        }
         if (cli.Kind == CliKind.Claude)
         {
             var mode = ClaudeModeOf(a.Id);
@@ -233,10 +267,11 @@ public static class Accounts
         name = (name ?? "").Trim();
         if (name.Length > 20) name = name[..20];
         if (name.Length == 0 || name == "기본")
-            name = $"{(cli.Kind == CliKind.Claude ? "Claude" : "Codex")} {s.Accounts.Count(a => CliProfile.For(a.Backend) == cli) + 2}";
+            name = $"{cli.Display} {s.Accounts.Count(a => CliProfile.For(a.Backend) == cli) + 2}";
 
         // 같은 CLI 안에서 이름이 겹치면 고르기 창에서 구별이 안 된다.
         var taken = s.Accounts.Where(a => CliProfile.For(a.Backend) == cli).Select(a => a.Name).ToHashSet();
+        taken.Add(DefaultName(s, cli));
         var baseName = name;
         for (var i = 2; taken.Contains(name); i++) name = $"{baseName} {i}";
 
