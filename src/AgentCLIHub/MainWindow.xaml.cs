@@ -104,6 +104,10 @@ public partial class MainWindow : Window
 
     /// <summary>닫는 일이 한 번 끝났다는 표식. 아래에서 다시 부른 <c>Close()</c> 를 그냥 통과시킨다.</summary>
     private bool _closingDone;
+    private bool _closingStarted;
+    private bool _restoringTabs;
+    private System.Windows.Threading.DispatcherTimer? _sessionWatch;
+    private System.Threading.Tasks.Task _sessionCapture = System.Threading.Tasks.Task.CompletedTask;
 
     /// <summary>
     /// 닫을 때. **한 번 물렸다가 다시 닫는다** — 세션 쿠키를 꺼내는 일이 비동기인데
@@ -124,13 +128,17 @@ public partial class MainWindow : Window
 
         if (_closingDone) return;
         e.Cancel = true;
+        if (_closingStarted) return;
+        _closingStarted = true;
 
         try
         {
             _usage?.Stop();
+            _sessionWatch?.Stop();
             _modelQuery?.Cancel();
             try { _stallWatch?.Dispose(); } catch { }
             _stallWatch = null;
+            await CaptureSessionsAsync();
             SaveTabs();
 
             if (Settings.Load().KeepSignedIn && View.CoreWebView2?.Profile.CookieManager is { } cm)
@@ -139,9 +147,10 @@ public partial class MainWindow : Window
         }
         catch { /* 저장 실패가 종료를 막지 않는다 */ }
 
-        _closingDone = true;
         _bridge?.Dispose();
         foreach (var t in _tabs.Values) { try { t.Dispose(); } catch { } }
+        // CLI가 종료 직전에 기록한 세션도 저장한다. 탭 목록을 비우기 전에 실행한다.
+        try { await CaptureSessionsAsync(); SaveTabs(); } catch { }
 
         // **CLI 를 다 끝낸 뒤에 뜬다.** 그래야 마지막으로 쓴 상태가 사본에 들어간다.
         try { if (Settings.Load().GuardClaudeLogin) ClaudeAuthGuard.Guard(mayRestore: false, Log); }
@@ -150,6 +159,7 @@ public partial class MainWindow : Window
         _tabs.Clear();
         _browsers.Clear();
         _order.Clear();
+        _closingDone = true;
         Close();
     }
 
@@ -261,6 +271,7 @@ public partial class MainWindow : Window
                 }
 
                 StartUsage();
+                StartSessionWatch();
                 StartBridge();
                 StartStallWatch();
                 break;
@@ -534,7 +545,7 @@ public partial class MainWindow : Window
         var name = TabName(cwd);
 
         var host = new TerminalHost(id, cwd, cli, account, Post, (msg, lvl) => Log($"[{name}] {msg}", lvl))
-            { HandoffPath = handoffPath ?? resume.HandoffPath, ResumeTranscriptPath = resume.TranscriptPath };
+            { HandoffPath = handoffPath ?? resume.HandoffPath, ResumeTranscriptPath = resume.TranscriptPath, InitialResume = resume };
         _tabs[id] = host;
         _order.Add(id);
 
@@ -560,7 +571,9 @@ public partial class MainWindow : Window
     /// <summary>탭 배지에 붙일 계정 이름. 이름을 바꾸지 않은 기본 계정은 생략한다.</summary>
     private static string AccountLabel(CliProfile cli, string account)
     {
-        var label = Accounts.View(Settings.Load(), cli, account).Label;
+        var cfg = Settings.Load();
+        if (Accounts.Resolve(cfg, cli, account) != account) return "계정 없음";
+        var label = Accounts.View(cfg, cli, account).Label;
         return account.Length == 0 && label == "기본" ? "" : label;
     }
 
@@ -814,26 +827,31 @@ public partial class MainWindow : Window
     private void RestoreTabs()
     {
         var cfg = Settings.Load();
-        foreach (var tab in cfg.Tabs.ToList())
+        _restoringTabs = true;
+        try
         {
-            if (string.Equals(tab.Kind, "browser", StringComparison.OrdinalIgnoreCase))
+            foreach (var tab in cfg.Tabs.ToList())
             {
-                // 주소가 없으면 되살릴 것이 없다. 빈 브라우저 탭을 띄우면 왜 열렸는지 알 수 없다.
-                if (tab.Url is { Length: > 0 })
-                    try { OpenBrowserTab(tab.Url, tab.Name); }
-                    catch (Exception ex) { Log($"브라우저 탭을 되살리지 못했습니다 — {ex.Message}", "w"); }
-                continue;
-            }
-            if (!Directory.Exists(tab.Cwd)) { Log($"폴더가 없어 탭을 되살리지 못했습니다 — {tab.Cwd}", "w"); continue; }
+                if (string.Equals(tab.Kind, "browser", StringComparison.OrdinalIgnoreCase))
+                {
+                    // 주소가 없으면 되살릴 것이 없다. 빈 브라우저 탭을 띄우면 왜 열렸는지 알 수 없다.
+                    if (tab.Url is { Length: > 0 })
+                        try { OpenBrowserTab(tab.Url, tab.Name); }
+                        catch (Exception ex) { Log($"브라우저 탭을 되살리지 못했습니다 — {ex.Message}", "w"); }
+                    continue;
+                }
+                if (!Directory.Exists(tab.Cwd)) { Log($"폴더가 없어 탭을 되살리지 못했습니다 — {tab.Cwd}", "w"); continue; }
 
-            // **그 탭의 계정으로** 되살린다. 계정을 바꿔 이어가던 탭이 기본 계정으로 돌아오면 한도가 찬 계정으로
-            // 다시 막힌다. 그 사이 지운 계정이면 기본 계정으로 — 그때는 말해 둔다.
-            var cli = CliProfile.ForOrDefault(tab.Backend);
-            var acc = Accounts.Resolve(cfg, cli, tab.Account);
-            if (acc != (tab.Account ?? ""))
-                Log($"탭이 쓰던 계정을 찾지 못해 기본 계정으로 되살렸습니다 — {tab.Cwd}", "w");
-            OpenTab(tab.Cwd, tab.Backend, ResumeMode.Last, tab.Name, acc, tab.HandoffPath);
+                // 계정이 없어져도 기본 계정의 다른 대화로 대체하지 않는다.
+                var cli = CliProfile.ForOrDefault(tab.Backend);
+                var acc = tab.Account ?? "";
+                if (Accounts.Resolve(cfg, cli, acc) != acc)
+                    Log($"탭이 쓰던 계정을 찾지 못했습니다. [이어하기]에서 다른 계정을 선택하세요 — {tab.Cwd}", "w");
+                OpenTab(tab.Cwd, tab.Backend, SessionCheckpoint.Restore(tab), tab.Name, acc, tab.HandoffPath);
+            }
         }
+        finally { _restoringTabs = false; }
+        SaveTabs();
     }
 
     /// <summary>
@@ -863,8 +881,8 @@ public partial class MainWindow : Window
                     backend = h.Cli.Backend,
                     cli = h.Cli.Display,
                     memoryFile = h.Cli.MemoryFile,
-                    fresh = false,
-                    sessionId = "",
+                    fresh = h.Checkpoint.Fresh == true,
+                    sessionId = h.Checkpoint.Id ?? "",
                     alias = Alias(id),
                     account = h.Account,
                     accountName = AccountLabel(h.Cli, h.Account),
@@ -891,19 +909,49 @@ public partial class MainWindow : Window
     /// </summary>
     private void SaveTabs()
     {
+        if (_restoringTabs) return;
         var cfg = Settings.Load();
-        cfg.Tabs = _order
+        var tabs = _order
             // 로그인 탭은 남기지 않는다 — 되살려도 할 일이 없고, 켤 때마다 로그인 창이 뜨게 된다.
             // InPrivate 탭 · 스스로 여닫는 팝업도 남기지 않는다 — 되살려도 그 로그인은 이미 사라졌다.
             .Select(id => _tabs.TryGetValue(id, out var h)
-                ? (h.IsLogin ? null : new TabState { Kind = "cli", Cwd = h.Cwd, Backend = h.Cli.Backend, Name = Alias(id), Account = h.Account, HandoffPath = h.HandoffPath })
+                ? (h.IsLogin ? null : h.SavedState(Alias(id)))
                 : _browsers.TryGetValue(id, out var b)
                     ? (b.InPrivate || b.Transient ? null : new TabState { Kind = "browser", Url = b.Url, Name = Alias(id) })
                     : null)
             .Where(s => s is not null)
             .Select(s => s!)
             .ToList();
+        if (System.Text.Json.JsonSerializer.Serialize(tabs) == System.Text.Json.JsonSerializer.Serialize(cfg.Tabs)) return;
+        cfg.Tabs = tabs;
         cfg.Save();
+    }
+
+    private void StartSessionWatch()
+    {
+        if (_sessionWatch is not null) return;
+        _sessionWatch = new() { Interval = TimeSpan.FromSeconds(5) };
+        _sessionWatch.Tick += async (_, _) =>
+        {
+            await CaptureSessionsAsync();
+            if (!_closingStarted) SaveTabs();
+        };
+        _sessionWatch.Start();
+    }
+
+    private System.Threading.Tasks.Task CaptureSessionsAsync()
+    {
+        if (!_sessionCapture.IsCompleted) return _sessionCapture;
+        var hosts = _tabs.Values.Where(h => !h.IsLogin).ToArray();
+        var work = hosts.Select(h => (Host: h, Claimed: Claimed(h), Discover: hosts.Count(o =>
+            o.Cli == h.Cli && o.Account == h.Account && string.Equals(o.Cwd, h.Cwd, StringComparison.OrdinalIgnoreCase) &&
+            o.KnownSessionId is null && o.Checkpoint.Id is null) <= 1)).ToArray();
+        return _sessionCapture = System.Threading.Tasks.Task.Run(() =>
+        {
+            foreach (var item in work)
+                try { item.Host.CaptureSession(item.Claimed, item.Discover); }
+                catch { /* 일시적으로 잠긴 기록은 다음 주기에 다시 읽고 기존 번호는 유지한다. */ }
+        });
     }
 
     // ── 다른 계정으로 이어가기 ──────────────────────────────────────────────
@@ -928,7 +976,7 @@ public partial class MainWindow : Window
                         (h.Cli.Kind == CliKind.Claude || string.Equals(
                             h.Cli.Kind == CliKind.Antigravity ? o.AntigravityHome : o.CodexHome,
                             h.Cli.Kind == CliKind.Antigravity ? h.AntigravityHome : h.CodexHome, StringComparison.OrdinalIgnoreCase)))
-            .Select(o => o.KnownSessionId)
+            .Select(o => o.KnownSessionId ?? o.Checkpoint.Id)
             .Where(x => !string.IsNullOrEmpty(x))
             .Select(x => x!)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -1008,16 +1056,20 @@ public partial class MainWindow : Window
 
     private static (SessionRef? Session, Transcript? Transcript) TransferSource(TerminalHost host, ISet<string> claimed)
     {
+        host.CaptureSession(claimed, discover: false);
         SessionRef? source;
-        if (host.Cli.Kind == CliKind.Antigravity && host.HandoffPath is { Length: > 0 } handoff)
+        if (host.KnownSessionId is null && host.Cli.Kind == CliKind.Antigravity && host.HandoffPath is { Length: > 0 } handoff)
         {
             source = AntigravityTransfer.FindSession(host.Cwd, handoff, host.AntigravityHome);
             if (source is null) return (null, AntigravityTransfer.ReadHandoff(handoff));
         }
         else source = SessionFinder.Current(host.Cli, host.Cwd, host.CodexHome, host.StartedUtc, host.KnownSessionId, claimed, host.ClaudeHistoryHome, host.AntigravityHome);
         // 계정별 폴더가 분리되어 있어도, 앞선 전환 때 전달한 원본 파일을 다시 찾는다.
-        if (source is null && host.Cli.Kind == CliKind.Claude && host.ResumeTranscriptPath is { } path && File.Exists(path))
-            source = new SessionRef(host.Cli, Path.GetFileNameWithoutExtension(path), path, File.GetLastWriteTimeUtc(path));
+        if (source is null && host.Cli.Kind == CliKind.Claude && (host.Checkpoint.TranscriptPath ?? host.ResumeTranscriptPath) is { } original)
+        {
+            var path = HistoryPaths.PhysicalFile(original);
+            if (File.Exists(path)) source = new SessionRef(host.Cli, Path.GetFileNameWithoutExtension(path), path, File.GetLastWriteTimeUtc(path));
+        }
         return (source, source is null ? null : TranscriptReader.Read(host.Cli, source.Path));
     }
 
@@ -1088,7 +1140,7 @@ public partial class MainWindow : Window
 
         var name = TabName(old.Cwd);
         var host = new TerminalHost(id, old.Cwd, target, account, Post, (msg, lvl) => Log($"[{name}] {msg}", lvl))
-            { HandoffPath = mode.HandoffPath, ResumeTranscriptPath = mode.TranscriptPath };
+            { HandoffPath = mode.HandoffPath, ResumeTranscriptPath = mode.TranscriptPath, InitialResume = mode };
         _tabs[id] = host;
         SaveTabs();
 

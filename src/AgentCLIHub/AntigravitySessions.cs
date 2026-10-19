@@ -105,8 +105,10 @@ public static class AntigravitySessions
             Path.TrimEndingDirectorySeparator(Path.GetFullPath(s.Cwd)), want, StringComparison.OrdinalIgnoreCase)).ToList();
         var known = sessions.FirstOrDefault(s => s.Id == knownId);
         var since = startedUtc == DateTime.MaxValue ? DateTime.MinValue : startedUtc.AddSeconds(-5);
-        var pick = known ?? sessions.Where(s => !claimed.Contains(s.Id) && s.When.ToUniversalTime() >= since)
-                                   .OrderByDescending(s => s.When).FirstOrDefault();
+        var candidates = sessions.Where(s => !claimed.Contains(s.Id) && s.When.ToUniversalTime() >= since)
+                                 .OrderByDescending(s => s.When).ToArray();
+        var pick = knownId is not null ? known
+            : startedUtc == DateTime.MaxValue || candidates.Length == 1 ? candidates.FirstOrDefault() : null;
         return pick is null ? null : new SessionRef(CliProfile.Antigravity, pick.Id, TranscriptPath(home, pick.Id), pick.When.ToUniversalTime());
     }
 }

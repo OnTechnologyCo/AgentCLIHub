@@ -13,8 +13,9 @@ public static class ConversationTransfer
             return (ResumeMode.New, "넘길 대화 기록이 아직 없어 새 대화로 엽니다.");
         if (source == CliProfile.Claude && target == CliProfile.Claude && session is not null)
         {
-            if (!File.Exists(session.Path)) throw new FileNotFoundException("이어갈 Claude 대화 파일이 없습니다.", session.Path);
-            return (ResumeMode.Session(session.Id, Path.GetFullPath(session.Path)), "같은 대화를 그대로 이어갑니다.");
+            var sourcePath = HistoryPaths.PhysicalFile(session.Path);
+            if (!File.Exists(sourcePath)) throw new FileNotFoundException("이어갈 Claude 대화 파일이 없습니다.", sourcePath);
+            return (ResumeMode.Session(session.Id, sourcePath), "같은 대화를 그대로 이어갑니다.");
         }
         if (!transcript.HasConversation)
             return (ResumeMode.New, "넘길 대화가 비어 있어 새 대화로 엽니다.");

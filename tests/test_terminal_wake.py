@@ -53,6 +53,22 @@ class TerminalWakeTests(unittest.TestCase):
     def clear_messages(self):
         self.page.evaluate("sent.length = 0")
 
+    def test_restored_tabs_start_their_own_session_in_the_same_workspace(self):
+        for tab, backend, account, session in (
+            ("cc1", "claude_code", "account-a", "claude-first"),
+            ("cc2", "claude_code", "account-b", "claude-second"),
+            ("cx1", "codex_cli", "", "codex-first"),
+            ("cx2", "codex_cli", "", "codex-second"),
+            ("ag1", "antigravity_cli", "account-c", "antigravity-first"),
+        ):
+            self.message(t="tab.opened", id=tab, backend=backend, cli="Test CLI", name=tab,
+                         cwd="C:/same-workspace", account=account, fresh=False, sessionId=session)
+            self.page.clock.run_for(300)
+            starts = self.page.evaluate("id => sent.filter(m => m.t === 'term.start' && m.id === id)", tab)
+            self.assertEqual(len(starts), 1)
+            self.assertEqual(starts[0]["sessionId"], session)
+            self.assertFalse(starts[0]["fresh"])
+
     def inputs(self):
         return self.page.evaluate("sent.filter(m => m.t === 'term.in')")
 

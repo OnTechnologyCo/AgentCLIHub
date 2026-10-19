@@ -42,6 +42,10 @@ public sealed class TabState
     /// </summary>
     public string Account { get; set; } = "";
     public string? HandoffPath { get; set; }
+    public string? SessionId { get; set; }
+    public string? TranscriptPath { get; set; }
+    // null은 구버전 저장 탭(폴더의 마지막 대화), true는 아직 대화 기록이 없는 새 탭이다.
+    public bool? Fresh { get; set; }
 }
 
 /// <summary>

@@ -56,6 +56,49 @@ public sealed class TerminalHost : IDisposable
     public string? KnownSessionId { get; private set; }
     public string? HandoffPath { get; init; }
     public string? ResumeTranscriptPath { get; init; }
+    public ResumeMode InitialResume { get; init; } = ResumeMode.New;
+    private SessionCheckpoint? _checkpoint;
+    public SessionCheckpoint Checkpoint => _checkpoint ?? SessionCheckpoint.From(InitialResume);
+
+    public bool CaptureSession(ISet<string> claimed, bool discover)
+    {
+        if (IsLogin || StartedUtc == DateTime.MaxValue) return false;
+        var id = KnownSessionId ?? Checkpoint.Id;
+        SessionRef? session = null;
+        var pty = _pty;
+        if (pty?.IsRunning == true)
+        {
+            var processes = NativeFileOwners.ProcessTree(pty.ProcessId, StartedUtc);
+            var ownedFile = Cli.Kind == CliKind.Antigravity && id is not null
+                ? AntigravitySessions.ConversationPath(AntigravityHome, id) : Checkpoint.TranscriptPath;
+            if (Cli.Kind == CliKind.Claude || ownedFile is null || !NativeFileOwners.IsOpenBy(ownedFile, processes))
+                session = SessionFinder.ForProcess(Cli, Cwd, Cli.Kind == CliKind.Claude ? ClaudeHistoryHome
+                    : Cli.Kind == CliKind.Antigravity ? AntigravityHome : CodexHome, StartedUtc, claimed, processes);
+        }
+        if (session is null && id is null && !discover) return false;
+        session ??= id is null && Cli.Kind == CliKind.Antigravity && HandoffPath is { Length: > 0 } handoff
+            ? AntigravityTransfer.FindSession(Cwd, handoff, AntigravityHome)
+            : SessionFinder.Current(Cli, Cwd, CodexHome, StartedUtc, id, claimed, ClaudeHistoryHome, AntigravityHome);
+        if (session is null && Cli.Kind == CliKind.Claude && (Checkpoint.TranscriptPath ?? ResumeTranscriptPath) is { } original)
+        {
+            var path = HistoryPaths.PhysicalFile(original);
+            if (System.IO.File.Exists(path) && System.IO.Path.GetFileNameWithoutExtension(path) == id)
+                session = new(Cli, id!, path, System.IO.File.GetLastWriteTimeUtc(path));
+        }
+        if (session is null) return false;
+        var next = new SessionCheckpoint(session.Id, session.Path, false);
+        KnownSessionId = session.Id;
+        if (next == Checkpoint) return false;
+        _checkpoint = next;
+        return true;
+    }
+
+    public TabState SavedState(string alias)
+    {
+        var checkpoint = Checkpoint;
+        return new TabState { Kind = "cli", Cwd = Cwd, Backend = Cli.Backend, Name = alias, Account = Account,
+            HandoffPath = HandoffPath, SessionId = checkpoint.Id, TranscriptPath = checkpoint.TranscriptPath, Fresh = checkpoint.Fresh };
+    }
 
     private readonly Action<object> _toUi;
     private readonly Action<string, string> _log;
@@ -361,8 +404,10 @@ public sealed class TerminalHost : IDisposable
         // 모델·강도·권한은 **띄우는 순간의 설정**을 쓴다. 뒤에 설정을 바꿔도 이 탭은
         // 그대로 도는데, 그것이 맞다 — 돌고 있는 프로세스의 인자는 바꿀 수 없다.
         var cfg = Settings.Load();
+        if (Account.Length > 0 && Accounts.Resolve(cfg, Cli, Account) != Account)
+        { Fail("이 탭의 계정을 찾지 못했습니다. [이어하기]에서 다른 계정을 선택하세요."); return; }
 
-        if (Cli.Kind == CliKind.Antigravity && HandoffPath is { Length: > 0 } handoff)
+        if (resume.SessionId is null && Cli.Kind == CliKind.Antigravity && HandoffPath is { Length: > 0 } handoff)
         {
             var imported = AntigravityTransfer.FindSession(Cwd, handoff, AntigravityHome);
             if (imported is not null) resume = ResumeMode.Session(imported.Id);
@@ -398,7 +443,8 @@ public sealed class TerminalHost : IDisposable
         {
             // 계정의 projects 가 연결되지 않았거나 CLI 의 UUID 검색이 연결 폴더를 건너뛰어도
             // 실제 원본 파일로 이어간다. 번호와 파일 경로를 분리하여 다른 CLI 에는 UUID 를 보낸다.
-            var path = ResumeTranscriptPath;
+            var path = Checkpoint.TranscriptPath ?? ResumeTranscriptPath;
+            if (path is not null) path = HistoryPaths.PhysicalFile(path);
             if (path is null || !System.IO.File.Exists(path) ||
                 !string.Equals(System.IO.Path.GetFileNameWithoutExtension(path), resumeId, StringComparison.OrdinalIgnoreCase))
             {
@@ -409,6 +455,7 @@ public sealed class TerminalHost : IDisposable
             }
             if (path is null) { Fail($"이어갈 Claude 대화 파일을 찾지 못했습니다 — {resumeId}. 지난 대화 목록을 새로 열어 확인하세요."); return; }
             resume = resume with { TranscriptPath = System.IO.Path.GetFullPath(path) };
+            _checkpoint = SessionCheckpoint.From(resume);
         }
 
         // 계정 환경. **로그인이 없으면 띄우지 않는다** — 기본 계정으로 슬쩍 떨어져 뜨면 사용자는 넘겼다고
@@ -470,7 +517,13 @@ public sealed class TerminalHost : IDisposable
                 string? newId = null;
                 if (resume.SessionId is { Length: > 0 } sid) KnownSessionId = sid;
                 else if (resume.Fresh && Cli.Kind == CliKind.Claude) KnownSessionId = newId = Guid.NewGuid().ToString();
-                else if (!resume.Fresh && Cli.SupportsTransfer) KnownSessionId = SessionFinder.Latest(Cli, Cwd, CodexHome, ClaudeHistoryHome, AntigravityHome)?.Id;
+                else if (!resume.Fresh && Cli.SupportsTransfer &&
+                         SessionFinder.Latest(Cli, Cwd, CodexHome, ClaudeHistoryHome, AntigravityHome) is { } latest)
+                {
+                    KnownSessionId = latest.Id;
+                    resume = ResumeMode.Session(latest.Id, Cli.Kind == CliKind.Claude ? latest.Path : null);
+                    _checkpoint = new(latest.Id, latest.Path, false);
+                }
 
                 line = Cli.BuildCommandLine(loc.CommandHead(), cfg, resume, Cwd, CodexHome, newId,
                                             claudeDir ? ClaudeHome : null);

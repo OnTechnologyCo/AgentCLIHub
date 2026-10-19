@@ -323,6 +323,17 @@ Run report checks with `dotnet run --project tests/InstallerChecks/InstallerChec
 Installer builds also test the actual published helper with a read-only temporary directory before
 packaging. These checks do not modify the user's installation or application data.
 
+## 1.8.5 junction errors and restoring multiple account tabs
+
+- Fixed the **untrusted mount point** error when accessing a Claude account's `projects` junction. History reads, imports and resumes use the physical target path without changing Windows protection, existing links or conversation data.
+- Each tab now saves its account, exact session ID and transcript path, then resumes that session after restart. A newer conversation in the same workspace cannot replace it; empty new tabs remain new.
+- Concurrent new Codex and Antigravity sessions are distinguished by the processes holding their history files. Ambiguous candidates are not guessed. Session identities are checked periodically and saved before and after CLI shutdown.
+- Missing accounts and sessions are not silently replaced with another conversation on the default account.
+
+Update with `AgentCLIHub-Setup-1.8.5.0.exe`. **Older versions did not save per-tab session IDs. If a tab has already restored the wrong conversation, select its original history once through Resume after updating.** Native conversation histories remain intact.
+
+Validation: `SessionChecks` regression tests and `--redirection-smoke` reproduce Windows error 448 and verify transfers/restoration with RedirectionGuard enabled. `tests/codex_ownership_smoke.py <codex.exe>` checks two real concurrent Codex processes; `tests/claude_resume_smoke.py <claude.exe>` checks Claude resuming from a separate home. Both use local response servers with no real account sign-in or paid model request. Build `SessionChecks` in Release before running the Codex check.
+
 ## 1.8.4 account management and conversation resume
 
 - Use **Settings → Accounts → Name** to rename default Claude, Codex and Antigravity accounts too. Names persist across restarts and appear in account pickers, tabs, history and usage labels.

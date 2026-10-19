@@ -52,8 +52,7 @@ public static class SessionStore
         {
             try
             {
-                var root = new DirectoryInfo(Path.Combine(home, "projects"));
-                var real = root.ResolveLinkTarget(true)?.FullName ?? root.FullName;
+                var real = HistoryPaths.ClaudeProjects(home);
                 if (claudeRoots.Add(real)) all.AddRange(Claude(home, account));
             }
             catch { /* 한 계정의 읽기 실패가 다른 계정의 목록을 가리지 않게 한다 */ }
@@ -81,11 +80,11 @@ public static class SessionStore
     /// </summary>
     public static IEnumerable<SessionEntry> Claude(string home, string account = "")
     {
-        var root = Path.Combine(home, "projects");
+        var root = HistoryPaths.ClaudeProjects(home);
         if (!Directory.Exists(root)) yield break;
 
         var files = new DirectoryInfo(root).EnumerateDirectories()
-            .SelectMany(d => d.EnumerateFiles("*.jsonl", SearchOption.TopDirectoryOnly))
+            .SelectMany(d => new DirectoryInfo(HistoryPaths.PhysicalDirectory(d.FullName)).EnumerateFiles("*.jsonl", SearchOption.TopDirectoryOnly))
             .Where(f => Guid.TryParse(Path.GetFileNameWithoutExtension(f.Name), out _))
             .OrderByDescending(f => f.LastWriteTimeUtc)
             .Take(ScanFiles);

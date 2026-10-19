@@ -14,6 +14,25 @@ void Check(bool condition, string name)
 }
 try
 {
+    if (args.Length == 7 && args[0] == "--codex-owners")
+    {
+        for (var i = 3; i < 7; i += 2)
+        {
+            using var process = System.Diagnostics.Process.GetProcessById(int.Parse(args[i]));
+            var started = process.StartTime.ToUniversalTime();
+            var session = SessionFinder.ForProcess(CliProfile.Codex, args[2], args[1], started,
+                new HashSet<string>(), NativeFileOwners.ProcessTree(process.Id, started));
+            Check(session?.Id == args[i + 1], "real concurrent Codex process owns its exact session " + args[i + 1]);
+        }
+        return;
+    }
+    if (args.Contains("--redirection-smoke"))
+    {
+        RestoreChecks.Run(root, Check, enforceGuard: true);
+        Console.WriteLine($"{passed} guarded restore checks passed.");
+        return;
+    }
+    RestoreChecks.Run(root, Check, enforceGuard: false);
     AccountChecks.Run(root, Check);
     TransferMatrixChecks.Run(root, Check);
     if (args.Length == 2 && args[0] == "--agy-smoke") await AccountChecks.NativeSmoke(root, args[1], Check);

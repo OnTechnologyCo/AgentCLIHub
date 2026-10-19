@@ -810,9 +810,8 @@ public sealed record SessionRef(CliProfile Cli, string Id, string Path, DateTime
 /// <summary>
 /// **탭 하나가 지금 어느 대화를 쓰고 있는지** 찾는다. 계정을 바꿔 이어갈 때 무엇을 넘길지가 이것이다.
 ///
-/// 띄울 때의 번호만 믿지 않는다. 탭 안에서 <c>/clear</c> 나 <c>/resume</c> 을 치면 CLI 가 다른 대화로
-/// 옮겨 가고 번호가 바뀐다. 그래서 **이 탭이 뜬 뒤에 쓰인 기록 중 가장 최근 것**을 본다 — 다만 같은 폴더의
-/// 다른 탭이 쥐고 있는 번호는 뺀다. 띄울 때 번호를 모르는 경우(codex 새 대화)도 이것으로 찾는다.
+/// 저장된 번호가 있으면 그 대화만 찾는다. 새 대화의 번호를 모르면 파일을 사용하는 프로세스로
+/// 구분하고, 그것도 확인할 수 없을 때는 후보가 하나인 경우에만 선택한다.
 /// </summary>
 public static class SessionFinder
 {
@@ -833,13 +832,13 @@ public static class SessionFinder
     /// </summary>
     public static string ClaudeProjectDir(string cwd, string? home = null)
     {
-        var root = Path.Combine(home ?? CliProfile.ClaudeHome, "projects");
+        var root = HistoryPaths.ClaudeProjects(home ?? CliProfile.ClaudeHome);
         var slug = ClaudeSlug(Path.TrimEndingDirectorySeparator(cwd));
-        var dir = Path.Combine(root, slug);
+        var dir = HistoryPaths.PhysicalDirectory(Path.Combine(root, slug));
         if (Directory.Exists(dir) || slug.Length <= 200) return dir;
         try
         {
-            return Directory.EnumerateDirectories(root, slug[..200] + "*").FirstOrDefault() ?? dir;
+            return HistoryPaths.PhysicalDirectory(Directory.EnumerateDirectories(root, slug[..200] + "*").FirstOrDefault() ?? dir);
         }
         catch { return dir; }
     }
@@ -869,36 +868,42 @@ public static class SessionFinder
 
     private static SessionRef? Claude(string cwd, DateTime startedUtc, string? knownId, ISet<string> claimed, string? home)
     {
+        if (knownId is not null) return FindClaude(knownId, home ?? CliProfile.ClaudeHome);
         var dir = ClaudeProjectDir(cwd, home);
-        var known = FindClaude(knownId, home ?? CliProfile.ClaudeHome);
-        if (!Directory.Exists(dir)) return known;
+        if (!Directory.Exists(dir)) return null;
 
         var files = new DirectoryInfo(dir).GetFiles("*.jsonl")
             .Where(f => Guid.TryParse(Stem(f), out _)).ToArray();
         var since = startedUtc == DateTime.MaxValue ? DateTime.MaxValue : startedUtc.AddSeconds(-5);
         var pool = files.Where(f => f.LastWriteTimeUtc >= since && !claimed.Contains(Stem(f)))
-                        .Concat(files.Where(f => knownId is not null && Stem(f) == knownId))
                         .ToList();
-        var pick = pool.OrderByDescending(f => f.LastWriteTimeUtc).FirstOrDefault();
-        // 폴더 이름 변경·긴 경로·사용자 지정 프로젝트 폴더에서도 정확한 번호를 보존한다.
-        if (known is not null && (pick is null || pick.LastWriteTimeUtc < since)) return known;
-        // 번호를 알고 있는 탭에서 파일을 못 찾았다고 오래된 다른 대화를 넘기면 안 된다.
-        if (pick is null && knownId is null && startedUtc == DateTime.MaxValue)
+        var pick = pool.Count == 1 ? pool[0] : null;
+        if (pick is null && startedUtc == DateTime.MaxValue)
             pick = files.Where(f => !claimed.Contains(Stem(f))).OrderByDescending(f => f.LastWriteTimeUtc).FirstOrDefault();
-        return pick is null ? known : new SessionRef(CliProfile.Claude, Stem(pick), pick.FullName, pick.LastWriteTimeUtc);
+        return pick is null ? null : new SessionRef(CliProfile.Claude, Stem(pick), pick.FullName, pick.LastWriteTimeUtc);
     }
 
     /// <summary>번호로 지정한 Claude 대화만 찾는다. 다른 최신 대화나 subagents 기록으로 대체하지 않는다.</summary>
     public static SessionRef? FindClaude(string? id, string home)
     {
         if (!Guid.TryParse(id, out _)) return null;
-        var root = Path.Combine(home, "projects");
-        if (!Directory.Exists(root)) return null;
-        foreach (var dir in Directory.EnumerateDirectories(root))
+        try
         {
-            var path = Path.Combine(dir, id + ".jsonl");
-            if (File.Exists(path)) return new SessionRef(CliProfile.Claude, id!, path, File.GetLastWriteTimeUtc(path));
+            var root = HistoryPaths.ClaudeProjects(home);
+            if (!Directory.Exists(root)) return null;
+            foreach (var dir in Directory.EnumerateDirectories(root))
+            {
+                try
+                {
+                    var path = Path.Combine(HistoryPaths.PhysicalDirectory(dir), id + ".jsonl");
+                    if (File.Exists(path)) return new SessionRef(CliProfile.Claude, id!, path, File.GetLastWriteTimeUtc(path));
+                }
+                catch (IOException) { }
+                catch (UnauthorizedAccessException) { }
+            }
         }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
         return null;
     }
 
@@ -924,10 +929,7 @@ public static class SessionFinder
         if (!Directory.Exists(root)) return null;
 
         var want = Path.TrimEndingDirectorySeparator(Path.GetFullPath(cwd));
-        var files = new DirectoryInfo(root).EnumerateFiles("rollout-*.jsonl", SearchOption.AllDirectories)
-                                           .OrderByDescending(f => f.LastWriteTimeUtc)
-                                           .Take(400)
-                                           .ToList();
+        var files = new DirectoryInfo(root).EnumerateFiles("rollout-*.jsonl", SearchOption.AllDirectories);
 
         (FileInfo File, string Id)? Probe(FileInfo f)
         {
@@ -937,26 +939,85 @@ public static class SessionFinder
             return same ? (f, id) : null;
         }
 
-        var since = startedUtc == DateTime.MaxValue ? DateTime.MaxValue : startedUtc.AddSeconds(-5);
-        (FileInfo File, string Id)? best = null;
-
-        // 이 탭이 뜬 뒤에 쓰인 것 · 띄울 때 준 번호.
-        foreach (var f in files)
+        // 번호를 알고 있으면 그 파일만 읽는다. 다른 탭이 더 늦게 응답해도 그 탭으로 바꾸지 않는다.
+        if (knownId is not null)
         {
-            var fresh = f.LastWriteTimeUtc >= since;
-            var known = knownId is not null && f.Name.Contains(knownId, StringComparison.OrdinalIgnoreCase);
-            if (!fresh && !known) continue;
-            if (Probe(f) is not { } hit) continue;
-            if (fresh && claimed.Contains(hit.Id) && !known) continue;
-            if (best is null || hit.File.LastWriteTimeUtc > best.Value.File.LastWriteTimeUtc) best = hit;
+            foreach (var f in files.Where(f => f.Name.Contains(knownId, StringComparison.OrdinalIgnoreCase)))
+                if (Probe(f) is { } hit && hit.Id == knownId)
+                    return new(CliProfile.Codex, hit.Id, f.FullName, f.LastWriteTimeUtc);
+            return null;
         }
+        var since = startedUtc == DateTime.MaxValue ? DateTime.MinValue : startedUtc.AddSeconds(-5);
+        var candidates = files.Where(f => f.LastWriteTimeUtc >= since).OrderByDescending(f => f.LastWriteTimeUtc).Take(400).Select(Probe)
+            .Where(hit => hit is not null && !claimed.Contains(hit.Value.Id)).Select(hit => hit!.Value).ToArray();
+        if (candidates.Length == 0 || startedUtc != DateTime.MaxValue && candidates.Length != 1) return null;
+        var best = candidates[0];
+        return new(CliProfile.Codex, best.Id, best.File.FullName, best.File.LastWriteTimeUtc);
+    }
 
-        // 못 찾았으면 그 폴더의 가장 최근 것(resume --last 가 고를 그것).
-        if (best is null)
-            foreach (var f in files)
-                if (Probe(f) is { } hit && !claimed.Contains(hit.Id)) { best = hit; break; }
-
-        return best is { } b ? new SessionRef(CliProfile.Codex, b.Id, b.File.FullName, b.File.LastWriteTimeUtc) : null;
+    /// <summary>같은 계정·폴더의 새 탭이 여럿이어도 이 프로세스가 열고 있는 기록만 선택한다.</summary>
+    public static SessionRef? ForProcess(CliProfile cli, string cwd, string home, DateTime startedUtc,
+        ISet<string> claimed, ISet<int> processes)
+    {
+        if (processes.Count == 0) return null;
+        var want = Path.TrimEndingDirectorySeparator(Path.GetFullPath(cwd));
+        var since = startedUtc.AddSeconds(-5);
+        bool SameFolder(string value) => value.Length > 0 && string.Equals(
+            Path.TrimEndingDirectorySeparator(value), want, StringComparison.OrdinalIgnoreCase);
+        var candidates = new List<(SessionRef Session, string File)>();
+        if (cli.Kind == CliKind.Claude)
+        {
+            // Claude가 직접 기록하는 PID별 현재 세션 정보로 /clear·/resume 이후의 번호도 추적한다.
+            var markerRoot = HistoryPaths.PhysicalDirectory(Path.Combine(home, "sessions"));
+            var sessions = new List<SessionRef>();
+            foreach (var pid in processes)
+            {
+                try
+                {
+                    var marker = Path.Combine(markerRoot, pid + ".json");
+                    if (!File.Exists(marker) || new FileInfo(marker).Length > 64 * 1024) continue;
+                    using var stream = new FileStream(marker, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+                    using var doc = JsonDocument.Parse(stream);
+                    var o = doc.RootElement;
+                    var id = o.GetProperty("sessionId").GetString() ?? "";
+                    if (o.GetProperty("pid").GetInt32() != pid || claimed.Contains(id) ||
+                        !SameFolder(o.GetProperty("cwd").GetString() ?? "") ||
+                        DateTimeOffset.FromUnixTimeMilliseconds(o.GetProperty("startedAt").GetInt64()).UtcDateTime < since ||
+                        o.TryGetProperty("kind", out var kind) && kind.GetString() != "interactive") continue;
+                    if (FindClaude(id, home) is { } session) sessions.Add(session);
+                }
+                catch (IOException) { }
+                catch (UnauthorizedAccessException) { }
+                catch (JsonException) { }
+                catch (InvalidOperationException) { }
+                catch (KeyNotFoundException) { }
+                catch (ArgumentOutOfRangeException) { }
+            }
+            return sessions.Count == 1 ? sessions[0] : null;
+        }
+        if (cli.Kind == CliKind.Codex)
+        {
+            var root = Path.Combine(home, "sessions");
+            if (!Directory.Exists(root)) return null;
+            foreach (var file in new DirectoryInfo(root).EnumerateFiles("rollout-*.jsonl", SearchOption.AllDirectories)
+                .Where(f => f.LastWriteTimeUtc >= since).OrderByDescending(f => f.LastWriteTimeUtc).Take(400))
+            {
+                var (id, folder) = CodexMeta(file.FullName);
+                if (id.Length > 0 && !claimed.Contains(id) && SameFolder(folder))
+                    candidates.Add((new(cli, id, file.FullName, file.LastWriteTimeUtc), file.FullName));
+            }
+        }
+        else if (cli.Kind == CliKind.Antigravity)
+        {
+            foreach (var entry in AntigravitySessions.Recent(home).Where(s => !claimed.Contains(s.Id) &&
+                s.When.ToUniversalTime() >= since && SameFolder(s.Cwd)))
+                if (AntigravitySessions.ConversationPath(home, entry.Id) is { } file)
+                    candidates.Add((new(cli, entry.Id, AntigravitySessions.TranscriptPath(home, entry.Id), entry.When.ToUniversalTime()), file));
+        }
+        var owned = candidates.Where(c => NativeFileOwners.IsOpenBy(c.File, processes) ||
+            cli.Kind == CliKind.Antigravity && File.Exists(c.File + "-wal") && NativeFileOwners.IsOpenBy(c.File + "-wal", processes))
+            .Take(2).ToArray();
+        return owned.Length == 1 ? owned[0].Session : null;
     }
 
     /// <summary>rollout 첫 줄(session_meta)의 번호와 폴더. 첫 줄에 지침 본문이 통째로 들어 있어 넉넉히 읽는다.</summary>
@@ -970,6 +1031,7 @@ public static class SessionFinder
             if (line is null || JsonNode.Parse(line) is not JsonObject o || TranscriptReader.Str(o["type"]) != "session_meta")
                 return ("", "");
             var p = o["payload"];
+            if (p?["source"] is JsonObject source && source.ContainsKey("subagent")) return ("", "");
             var id = TranscriptReader.Str(p?["id"]);
             if (id.Length == 0) id = TranscriptReader.Str(p?["session_id"]);
             return (id, TranscriptReader.Str(p?["cwd"]));
