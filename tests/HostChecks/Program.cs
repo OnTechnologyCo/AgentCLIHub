@@ -2,9 +2,9 @@ using System.Diagnostics;
 using System.Reflection;
 using System.Text;
 using System.Text.Json;
-using LlmTools;
+using AgentCLIHub;
 
-var root = Path.Combine(Path.GetTempPath(), "llmtools-host-" + Guid.NewGuid().ToString("N"));
+var root = Path.Combine(Path.GetTempPath(), "agentclihub-host-" + Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(root);
 var originalPath = Environment.GetEnvironmentVariable("PATH");
 var passed = 0;
@@ -108,8 +108,8 @@ try
     Check(CliLocator.Locate(CliProfile.Codex).Path == native, "native executable on process PATH");
     Check(CliLocator.Locate(CliProfile.Codex, Path.Combine(root, "removed/codex.exe")).Path == native, "removed version path falls back to auto detection");
     Check(CliLocator.Locate(CliProfile.Codex, "\"" + native + "\"").Path == native, "quoted configured path is accepted");
-    Environment.SetEnvironmentVariable("LLMTOOLS_TEST_BIN", Path.GetDirectoryName(native));
-    Environment.SetEnvironmentVariable("PATH", "\"%LLMTOOLS_TEST_BIN%\"");
+    Environment.SetEnvironmentVariable("AGENTCLIHUB_TEST_BIN", Path.GetDirectoryName(native));
+    Environment.SetEnvironmentVariable("PATH", "\"%AGENTCLIHUB_TEST_BIN%\"");
     Check(CliLocator.Locate(CliProfile.Codex).Path == native, "PATH quotes and environment expansion");
 
     var npm = FileAt("npm 경로/codex.cmd", "@echo off\r\nnode \"%~dp0node_modules/@openai/codex/bin/codex.js\" %*\r\n");
@@ -131,7 +131,7 @@ try
 
     var agyCmd = FileAt("custom 폴더/agy.cmd", "@echo off\r\n\"" + node + "\" \"%~dp0args.js\" %*\r\n");
     var agyLauncher = CliLocator.Locate(CliProfile.Antigravity, agyCmd);
-    var handoffPath = Path.Combine(root, "한글 작업 폴더", ".llmtools-handoff", Guid.NewGuid() + ".json");
+    var handoffPath = Path.Combine(root, "한글 작업 폴더", ".agentclihub-handoff", Guid.NewGuid() + ".json");
     var handoffLine = CliProfile.Antigravity.BuildCommandLine(agyLauncher.CommandHead(),
         new Settings { AntigravityModel = "test-model" }, ResumeMode.Handoff(handoffPath), root);
     var handoffRun = Run(agyLauncher.LaunchCommand(handoffLine));
@@ -265,7 +265,7 @@ try
 finally
 {
     Environment.SetEnvironmentVariable("PATH", originalPath);
-    Environment.SetEnvironmentVariable("LLMTOOLS_TEST_BIN", null);
+    Environment.SetEnvironmentVariable("AGENTCLIHUB_TEST_BIN", null);
     // Remove junctions before their targets; recursive enumeration can otherwise meet a broken junction.
     foreach (var relative in new[] { "stable-bin", "standalone/current" })
     {

@@ -1,4 +1,4 @@
-﻿# Agent CLI Hub — 탭 중복 사고 수습.
+﻿# AgentCLIHub — 탭 중복 사고 수습.
 #
 #   pwsh -File ".\recover.ps1"
 #
@@ -8,13 +8,13 @@
 # 폴더에서 12개 떠 ~/.claude.json 을 동시에 쓰다 그 파일을 잘라 놓았다.
 # 그래서 "대화 이어서 하기" 를 누르면 로그인부터 다시 하라고 나온다.
 #
-# **Agent CLI Hub 를 완전히 닫은 뒤에 실행하라.** 떠 있으면 닫을 때 지금 화면의
+# **AgentCLIHub 를 완전히 닫은 뒤에 실행하라.** 떠 있으면 닫을 때 지금 화면의
 # 탭 목록(중복된 것)을 그대로 다시 써서 이 스크립트가 한 일이 지워진다.
 
 $ErrorActionPreference = 'Stop'
 
 if (Get-Process -Name AgentCLIHub,LlmTools -ErrorAction SilentlyContinue) {
-    Write-Host "Agent CLI Hub 가 아직 떠 있습니다. 창을 닫고 다시 실행하세요." -ForegroundColor Red
+    Write-Host "AgentCLIHub 가 아직 떠 있습니다. 창을 닫고 다시 실행하세요." -ForegroundColor Red
     exit 1
 }
 

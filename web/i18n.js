@@ -1,8 +1,8 @@
 // Translate application labels only. Never walk terminal output, input values or conversation text.
 (() => {
-  const dictionary = window.LLM_UI_EN || {};
+  const dictionary = window.AGENTCLIHUB_UI_EN || {};
   let language = 'ko';
-  try { language = localStorage.getItem('llmtools.uiLanguage') === 'en' ? 'en' : 'ko'; } catch {}
+  try { language = localStorage.getItem('agentclihub.uiLanguage') === 'en' ? 'en' : 'ko'; } catch {}
   const format = (text, values) => text.replace(/\{(\d+)\}/g, (all, i) => i < values.length ? String(values[i] ?? '') : all);
   const patterns = Object.entries(dictionary).filter(([key]) => /\{\d+\}/.test(key)).map(([key, value]) => {
     const indexes = [];
@@ -47,7 +47,7 @@
     set(value) {
       const next = value === 'en' ? 'en' : 'ko';
       const changed = next !== language; language = next;
-      try { localStorage.setItem('llmtools.uiLanguage', language); } catch {}
+      try { localStorage.setItem('agentclihub.uiLanguage', language); } catch {}
       paint();
       return changed;
     },

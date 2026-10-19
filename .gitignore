@@ -10,6 +10,8 @@ artifacts/
 
 # 로컬 인증 상태, 첨부파일, 실행 캐시
 .codex-probe/
+.agentclihub-attachments/
+# Legacy files remain private after an upgrade.
 .llmtools-attachments/
 node_modules/
 .venv/
@@ -30,6 +32,7 @@ __pycache__/
 # User authentication, browser profiles, and private transcripts
 .claude/
 .codex/
+.agentclihub-handoff/
 .llmtools-handoff/
 **/.credentials.json
 **/auth.json

@@ -1,4 +1,4 @@
-# Agent CLI Hub
+# AgentCLIHub
 
 **Unified workspace for AI coding agent CLIs**
 
@@ -25,8 +25,8 @@ The folder selected under **New conversation (＋ 새 대화)** is the **CLI's c
 | Conversation history | **The CLI's own home**: `~/.claude/projects/<folder>/<session>.jsonl` or `$CODEX_HOME/sessions/<date>/rollout-*.jsonl`. |
 | App settings | `%LOCALAPPDATA%\AgentCLIHub\settings.json`: open tabs, models, permissions, CLI paths, and bookmarks. |
 
-**Pasted images and 📷 screen captures** are saved under `<folder>\.llmtools-attachments\`. Clipboard images have no path to send through stdin, and the CLI cannot read outside its working directory without `--add-dir`. Files selected with 📎 are passed by path without writing a copy.
-When **handing another CLI's conversation to Antigravity**, the app writes a handoff file under `<folder>\.llmtools-handoff\`. Keep it while using that conversation: tab restoration and later transfers use it too.
+**Pasted images and 📷 screen captures** are saved under `<folder>\.agentclihub-attachments\`. Clipboard images have no path to send through stdin, and the CLI cannot read outside its working directory without `--add-dir`. Files selected with 📎 are passed by path without writing a copy.
+When **handing another CLI's conversation to Antigravity**, the app writes a handoff file under `<folder>\.agentclihub-handoff\`. Keep it while using that conversation: tab restoration and later transfers use it too.
 
 ## Interface
 
@@ -82,7 +82,7 @@ When an account's five-hour, weekly, or monthly limit is reached, transfer the c
 
 - Claude history is reconstructed backward through `parentUuid`. Rewound/discarded branches are excluded. At `/compact` boundaries, start from the summary, jumping from the retained segment's start to it. Parentless hook attachments written during resume reconnect to preceding history instead of ending traversal. Parallel-tool results are matched by call ID, because sibling results would be missed by chain traversal alone.
 - Codex reads only what the model saw (`response_item`). Reasoning and remote compaction are **ciphertext bound to the issuing account**, so they are not transferred; even Codex → Codex is conversion rather than copying. Use the pre-compaction original text remaining in the file.
-- Antigravity reads requests, responses, and tools from `brain/<id>/.system_generated/logs/transcript.jsonl`; its binary conversation database is not modified. If text is absent/unreadable, stop the transfer and retain the tab. For conversations started by handoff, include the original `.llmtools-handoff` content too.
+- Antigravity reads requests, responses, and tools from `brain/<id>/.system_generated/logs/transcript.jsonl`; its binary conversation database is not modified. If text is absent/unreadable, stop the transfer and retain the tab. For conversations started by handoff, include the original `.agentclihub-handoff` content too.
 - Above 160,000 characters, preserve the opening summary and **first request**, trim the middle, and record omitted counts and the source path.
 
 **Finding the current conversation:** Do not trust only the launch ID: `/clear` and `/resume` can change it. Choose the most recent history written since the tab started, excluding IDs held by **other tabs in the same folder**. The picker displays the first message for confirmation. Antigravity prioritizes a known session ID; handoff tabs locate the session receiving their handoff file.
@@ -117,13 +117,13 @@ The usage strip has one cell per account (`Claude`, `Claude·Company`, `GPT`, `G
 git clone https://github.com/OnTechnologyCo/AgentCLIHub.git
 cd AgentCLIHub
 dotnet build AgentCLIHub.sln
-.\src\LlmTools\bin\Debug\net9.0-windows\AgentCLIHub.exe
+.\src\AgentCLIHub\bin\Debug\net9.0-windows\AgentCLIHub.exe
 ```
 
 Build a distribution:
 
 ```powershell
-dotnet publish src\LlmTools\LlmTools.csproj -c Release -r win-x64 --self-contained false
+dotnet publish src\AgentCLIHub\AgentCLIHub.csproj -c Release -r win-x64 --self-contained false
 ```
 
 **Requirements:** Windows 10 1809 (build 17763) or later (ConPTY was introduced then), .NET 9 Desktop Runtime, Microsoft Edge WebView2 Runtime (usually already on Windows 11), and the `claude` or `codex` CLI you intend to use. Discovery checks process/user/system PATH and conventional install paths; otherwise specify it manually in Settings.
@@ -133,7 +133,7 @@ dotnet publish src\LlmTools\LlmTools.csproj -c Release -r win-x64 --self-contain
 | Path | Role |
 |---|---|
 | `AgentCLIHub.sln` | Solution |
-| `src/LlmTools/LlmTools.csproj` | Desktop project |
+| `src/AgentCLIHub/AgentCLIHub.csproj` | Desktop project |
 | `App.xaml(.cs)` | Displays unhandled exceptions in a dialog |
 | `MainWindow.xaml(.cs)` | WebView2, tabs, Windows dialogs |
 | `ConPty.cs` | Pseudoconsole: pipes, resize, environment overrides |
@@ -155,11 +155,11 @@ dotnet publish src\LlmTools\LlmTools.csproj -c Release -r win-x64 --self-contain
 - Store independent fields (`ClaudeModel`, `ClaudeEffort`, `CodexModel`, `CodexEffort`). Sharing a field would send Claude's `opus` to `codex -m opus` and terminate it. Legacy settings with one backend/model/effort are migrated on first launch into the selected CLI's fields. The picker initially focuses that CLI, preserving an Enter-only workflow after updating.
 - **Permission axes differ:** Claude has `--permission-mode`; Codex has sandbox (`-s`) and approvals (`-a`). They remain separate so displayed settings match the real flags.
 
-- Claude and Codex both use the agent/browser bridge (`agentclihub-browser.exe` ↔ named pipe). Codex runs with a **write-restricted sandbox token**, and elevated mode may use `CodexSandboxOffline/Online`. Pipe access is expanded only to the current user, `CodexSandboxUsers`, and **the current logon SID**. Every request must also carry `LLMTOOLS_BROWSER_TICKET`, freshly generated for each app launch and injected only into its terminals: outside Codex sessions may share the sandbox account/SID. Wrong tickets are rejected and logged as warnings.
-- Browser guidance is added through Claude's `--append-system-prompt-file` or Codex's `$CODEX_HOME/llmtools.config.toml` `developer_instructions` plus `-p llmtools`. This TOML basic string **must escape backslashes**. Through 1.4.0, `\P` in `C:\Program Files\…` broke Codex configuration loading.
+- Claude and Codex both use the agent/browser bridge (`agentclihub-browser.exe` ↔ named pipe). Codex runs with a **write-restricted sandbox token**, and elevated mode may use `CodexSandboxOffline/Online`. Pipe access is expanded only to the current user, `CodexSandboxUsers`, and **the current logon SID**. Every request must also carry `AGENTCLIHUB_BROWSER_TICKET`, freshly generated for each app launch and injected only into its terminals: outside Codex sessions may share the sandbox account/SID. Wrong tickets are rejected and logged as warnings.
+- Browser guidance is added through Claude's `--append-system-prompt-file` or Codex's `$CODEX_HOME/agentclihub.config.toml` `developer_instructions` plus `-p agentclihub`. This TOML basic string **must escape backslashes**. Through 1.4.0, `\P` in `C:\Program Files\…` broke Codex configuration loading.
 - **A new folder triggers the CLI's trust prompt.** Answer with arrows/Enter in the terminal; the app does not decide for you. Codex 0.155 asks even when `-a`/`-s` are supplied.
 - After granting folder trust, a PC without a chosen Windows sandbox can show **Set up sandbox**. Completing it overrides **that session's** permissions with Codex defaults (on-request/workspace-write), after the app's arguments. Close/reopen the tab to use configured permissions; the sandbox choice is retained. The first Codex tab on such a PC logs this explanation once.
-- **Codex launched with `-p llmtools` writes trust, sandbox choice, and `/model` to `llmtools.config.toml`, not `config.toml`.** Through 1.5.2 the app rewrote the whole file each launch (each account-tab launch for account homes), losing these choices and repeatedly prompting on other PCs. Since 1.5.3 only `developer_instructions` is merged; other content stays. If `.sandbox/setup_marker.json` proves elevated setup but no selection exists anywhere, restore `[windows] sandbox = "elevated"` to recover a value erased by the older app.
+- **Codex launched with `-p agentclihub` writes trust, sandbox choice, and `/model` to `agentclihub.config.toml`, not `config.toml`.** Through 1.5.2 the app rewrote the whole file each launch (each account-tab launch for account homes), losing these choices and repeatedly prompting on other PCs. Since 1.5.3 only `developer_instructions` is merged; other content stays. If `.sandbox/setup_marker.json` proves elevated setup but no selection exists anywhere, restore `[windows] sandbox = "elevated"` to recover a value erased by the older app.
 - **Forced app termination can leave CLI children running.** Normal window closing cleans them up. If needed, terminate remaining `claude.exe`/`codex.exe` in Task Manager.
 - **Codex elapsed-time updates freezing until a click (1.5.4 compatibility handling):** Reproduced with Codex 0.159.3/ConPTY: output itself stops without input, so repainting is insufficient. After 500 ms without output, send terminal FocusIn (`CSI I`) only to the visible Codex tab that requested focus reporting. Suppress during normal output, other tabs, Settings/pickers, login, after exit, or when the app is inactive. At most twice per second; retain input focus and drafts.
 - **Codex executable discovery improvements (1.6.1):** With no manual path, first run PowerShell `Get-Command codex` and launch in the same profile environment. Resolve official `bin → current → releases/<version>` links to the actual `codex.exe` each time. If PATH/link folders are missing, check `CODEX_HOME` or default `~/.codex` for `packages/standalone/current` and `auto-update-version`. Do not persist an automatically resolved version path. Log selected path/discovery method, and Windows error number/message on failure. A valid manually specified path remains first priority.
@@ -191,14 +191,14 @@ The following were actually run on the development PC; these are the original pr
 - Settings had separate CLI cards; Codex model changes updated its effort list. Saving included per-CLI fields and `GuardClaudeLogin`, without old keys.
 - Usage remained visible in Settings/browser tabs, highlighted only the current account, and changed color at 60/85%.
 
-**Resume and restart:** Command lines generated from read-only access to actual settings/history (51 Claude, 9 Codex conversations) were accepted by installed Claude 2.1.270/Codex 0.154.0 with `--version` appended to validate arguments **without opening sessions**. Accepted forms included `claude --resume <id> --model opus --effort max --permission-mode bypassPermissions --append-system-prompt-file …`, `claude --continue …`, `codex resume <id> -p llmtools`, `codex resume --last …` (only with folder history), and fully specified Codex model/effort/sandbox/approval flags. Version 1.3.1 incorrectly passed Claude's `opus/max` fields to resumed Codex because fields were shared. UI checks covered a 60-item history, filtering, selected IDs in `tab.resume`/`term.start`, Esc/Close, and native browser hiding.
+**Resume and restart:** Command lines generated from read-only access to actual settings/history (51 Claude, 9 Codex conversations) were accepted by installed Claude 2.1.270/Codex 0.154.0 with `--version` appended to validate arguments **without opening sessions**. Accepted forms included `claude --resume <id> --model opus --effort max --permission-mode bypassPermissions --append-system-prompt-file …`, `claude --continue …`, `codex resume <id> -p agentclihub`, `codex resume --last …` (only with folder history), and fully specified Codex model/effort/sandbox/approval flags. Version 1.3.1 incorrectly passed Claude's `opus/max` fields to resumed Codex because fields were shared. UI checks covered a 60-item history, filtering, selected IDs in `tab.resume`/`term.start`, Esc/Close, and native browser hiding.
 
 All permission choices were passed to installed CLIs. Claude accepted all six; **Codex 0.154.0 rejected `untrusted` approvals**, exit 2 (`invalid value 'untrusted' for '--ask-for-approval'`). It was removed from choices and filtered from saved legacy values to avoid immediate tab exit.
 
-**The `--version` test's limitation:** It checks arguments but **does not read the `-p` profile**, missing 1.4.0's `llmtools.config.toml:10:5: missing escaped value`. Configuration-loading checks in 1.4.1 covered:
+**The `--version` test's limitation:** It checks arguments but **does not read the `-p` profile**, missing 1.4.0's `agentclihub.config.toml:10:5: missing escaped value`. Configuration-loading checks in 1.4.1 covered:
 
-- `codex -p llmtools mcp list`: the old file reproduced the user's error; the corrected file loaded. Python `tomllib` round-tripped guidance exactly, including `"""`, `'''`, trailing backslashes, and unmatched CR.
-- `codex -p llmtools debug prompt-input`: guidance appeared with the developer role and intact paths.
+- `codex -p agentclihub mcp list`: the old file reproduced the user's error; the corrected file loaded. Python `tomllib` round-tripped guidance exactly, including `"""`, `'''`, trailing backslashes, and unmatched CR.
+- `codex -p agentclihub debug prompt-input`: guidance appeared with the developer role and intact paths.
 
 **Codex browser bridge:** A fake app linked to the actual new bridge code exposed tab `FAKE-TAB-7Q`.
 
@@ -222,8 +222,8 @@ All permission choices were passed to installed CLIs. Claude accepted all six; *
 
 **Codex ignoring configured sandbox/approval (1.5.3, reported on another PC), Codex 0.155.1:**
 
-- Not reproduced on this PC: exact app arguments (`… -s danger-full-access -a never -p llmtools`) gave `/status` = `Full Access` for both new and resumed sessions, including histories recorded as read-only/on-request. This PC already had `[windows] sandbox = "elevated"` and trusted folders from separate Codex use.
-- Granting trust with `-p llmtools` demonstrably wrote `[projects.…]` to **`llmtools.config.toml`**, leaving config.toml unchanged.
+- Not reproduced on this PC: exact app arguments (`… -s danger-full-access -a never -p agentclihub`) gave `/status` = `Full Access` for both new and resumed sessions, including histories recorded as read-only/on-request. This PC already had `[windows] sandbox = "elevated"` and trusted folders from separate Codex use.
+- Granting trust with `-p agentclihub` demonstrably wrote `[projects.…]` to **`agentclihub.config.toml`**, leaving config.toml unchanged.
 - Source inspection (rust-v0.155.1) confirmed trust prompts ignore `-a`/`-s` when no trust_level exists; newly trusted Windows folders without sandbox setup trigger setup; setup overwrites the session with `auto` (on-request/workspace-write); `-p` directs writes to the profile file.
 - Merge harness: 27 cases covered 1.5.2 headers, appended trust/sandbox fields, top-level `/model`, `[` lines inside multiline strings, same-name table keys, restore-only-if-absent within existing `[windows]` (not for old switches/dotted syntax), and idempotence. All outputs parsed with `tomllib`. Guidance detection covered empty homes, trust-only, profile choice, legacy switch, and this PC's default home.
 - Merging the real profile retained guidance verbatim and trust; actual Codex then started **without a trust prompt** and with `Full Access`.
@@ -285,9 +285,9 @@ Original code and documentation use the [MIT License](LICENSE), allowing modific
 
 [Contributing](CONTRIBUTING.md) · [Security reporting](SECURITY.md) · [Legal and service terms](LEGAL.md) · [Local data and privacy](PRIVACY.md)
 
-## 1.8.0 rename and automatic upgrades
+## 1.8.1 consistent naming and automatic upgrades
 
-**Agent CLI Hub** is the new name of LLM Tools. Run `AgentCLIHub-Setup-1.8.0.0.exe` to upgrade;
+The project name is **AgentCLIHub**. Run `AgentCLIHub-Setup-1.8.1.0.exe` to upgrade;
 uninstalling the previous version first is unnecessary. The application is `AgentCLIHub.exe`.
 
 Before installation, Setup detects the installed path/version and checks settings and file locks.
@@ -301,6 +301,13 @@ Cancellation restores the original paths/settings; conflicting destinations and 
 upgrade without overwriting user data. The original installer AppId avoids duplicate product registration.
 
 Existing project attachments, handoff files, and provider-owned conversation histories retain their
-references. Source namespaces/project directories named `LlmTools` and encryption identifiers are internal compatibility details.
+references. Display and installer names, source namespaces, and project directories now use `AgentCLIHub`.
+New attachments and handoffs use `.agentclihub-attachments` and `.agentclihub-handoff`.
+Codex uses `-p agentclihub` and `agentclihub.config.toml`; its first creation preserves trust,
+sandbox, and model choices from `llmtools.config.toml`, leaving the original file intact.
+Browser bridge environment variables use `AGENTCLIHUB_BROWSER_*`.
+Legacy names remain only where needed to detect older installations/data, read old handoffs,
+and decrypt existing credentials and cookies.
 
 Run migration checks with `dotnet run --project tests/MigrationChecks/MigrationChecks.csproj -c Release`.
+Run rename compatibility checks with `dotnet run --project tests/RenameChecks/RenameChecks.csproj -c Release`.

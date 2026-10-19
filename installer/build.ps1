@@ -1,4 +1,4 @@
-﻿# Agent CLI Hub 설치본 만들기.
+﻿# AgentCLIHub 설치본 만들기.
 #
 #   pwsh installer\build.ps1              # Release, win-x64, 자체 포함
 #   pwsh installer\build.ps1 -SkipPublish # 이미 publish 해 뒀을 때 설치본만 다시
@@ -17,8 +17,8 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $root    = Split-Path -Parent $PSScriptRoot
-$app     = Join-Path $root 'src\LlmTools\LlmTools.csproj'
-$helper  = Join-Path $root 'src\LlmTools.Cli\LlmTools.Cli.csproj'
+$app     = Join-Path $root 'src\AgentCLIHub\AgentCLIHub.csproj'
+$helper  = Join-Path $root 'src\AgentCLIHub.Cli\AgentCLIHub.Cli.csproj'
 $publish = Join-Path $root 'artifacts\publish'
 $setup   = Join-Path $root 'artifacts\setup'
 $iss     = Join-Path $PSScriptRoot 'AgentCLIHub.iss'

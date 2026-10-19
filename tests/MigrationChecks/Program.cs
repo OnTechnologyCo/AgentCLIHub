@@ -2,7 +2,7 @@ using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Nodes;
-using LlmTools;
+using AgentCLIHub;
 
 var root = Path.Combine(Path.GetTempPath(), "agentclihub-migration-" + Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(root);

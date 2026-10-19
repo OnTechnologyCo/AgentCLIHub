@@ -1,4 +1,4 @@
-; Agent CLI Hub 설치 프로그램 (Inno Setup 6)
+; AgentCLIHub 설치 프로그램 (Inno Setup 6)
 ;
 ; installer\build.ps1 이 먼저 `dotnet publish` 를 돌리고 그 결과 폴더를 여기로 넘긴다.
 ; 손으로 컴파일하려면:
@@ -12,7 +12,7 @@
   #define PublishDir "..\artifacts\publish"
 #endif
 
-#define AppName "Agent CLI Hub"
+#define AppName "AgentCLIHub"
 #define AppExe "AgentCLIHub.exe"
 ; 버전은 빌드한 실행 파일에서 그대로 읽는다 — 두 군데 적으면 반드시 어긋난다.
 #define AppVersion GetVersionNumbersString(PublishDir + "\" + AppExe)
@@ -41,7 +41,7 @@ UsePreviousPrivileges=yes
 
 OutputDir={#PublishDir}\..\setup
 OutputBaseFilename=AgentCLIHub-Setup-{#AppVersion}
-SetupIconFile=..\src\LlmTools\app.ico
+SetupIconFile=..\src\AgentCLIHub\app.ico
 UninstallDisplayIcon={app}\{#AppExe}
 UninstallDisplayName={#AppName}
 
@@ -304,6 +304,10 @@ begin
     RemoveLegacyShortcut(ExpandConstant('{autoprograms}\LLM Tools.lnk'));
     RemoveLegacyShortcut(ExpandConstant('{autodesktop}\LLM Tools.lnk'));
     RemoveDir(ExpandConstant('{autoprograms}\LLM Tools'));
+    { 1.8.0에서 사용하던 띄어 쓴 제품명도 정리한다. }
+    RemoveLegacyShortcut(ExpandConstant('{autoprograms}\Agent CLI Hub.lnk'));
+    RemoveLegacyShortcut(ExpandConstant('{autodesktop}\Agent CLI Hub.lnk'));
+    RemoveDir(ExpandConstant('{autoprograms}\Agent CLI Hub'));
   end;
 end;
 

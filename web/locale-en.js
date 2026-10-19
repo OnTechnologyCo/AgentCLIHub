@@ -1,5 +1,5 @@
 // App interface strings. CLI output and user content are not translated.
-window.LLM_UI_EN = {
+window.AGENTCLIHUB_UI_EN = {
   "화면 언어": "Interface language",
   "언어": "Language",
   "언어는 즉시 적용하고 자동으로 저장합니다.": "Language changes apply immediately and are saved automatically.",

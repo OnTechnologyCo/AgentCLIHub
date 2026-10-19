@@ -1,4 +1,4 @@
-# Agent CLI Hub
+# AgentCLIHub
 
 **코딩 에이전트 CLI 통합 실행·관리 도구**
 
@@ -31,10 +31,10 @@ VS Code 통합 터미널과 같은 구조다. 그래서 슬래시 명령·플랜
 | 대화 기록 | **CLI 자신의 홈** — `~/.claude/projects/<폴더>/<세션>.jsonl` · `$CODEX_HOME/sessions/<날짜>/rollout-*.jsonl` |
 | 이 앱의 설정 | `%LOCALAPPDATA%\AgentCLIHub\settings.json` (열어 둔 탭 목록·모델·권한·CLI 경로·바로가기) |
 
-입력창에 **이미지를 붙여넣거나 📷 로 화면을 캡처해 보낼 때** `<폴더>\.llmtools-attachments\` 에 그 이미지를 저장한다.
+입력창에 **이미지를 붙여넣거나 📷 로 화면을 캡처해 보낼 때** `<폴더>\.agentclihub-attachments\` 에 그 이미지를 저장한다.
 클립보드 이미지는 경로가 없어 stdin 으로 못 보내고, CLI 는 자기 작업 폴더 **바깥** 파일은
 `--add-dir` 없이 못 읽기 때문이다. 📎 로 고른 파일은 경로만 넘기므로 아무것도 안 쓴다.
-다른 CLI의 대화를 **Antigravity로 넘길 때**는 `<폴더>\.llmtools-handoff\` 에 이전 대화의 인계 파일을 저장한다.
+다른 CLI의 대화를 **Antigravity로 넘길 때**는 `<폴더>\.agentclihub-handoff\` 에 이전 대화의 인계 파일을 저장한다.
 인계 파일은 탭 복원과 다른 CLI로 다시 넘길 때도 사용하므로 해당 대화를 사용하는 동안 유지한다.
 
 ---
@@ -162,7 +162,7 @@ Enter. 탭은 그대로(이름·자리·폴더) 두고 안의 CLI 만 갈아 끼
     그래서 Codex → Codex 도 원본 복사가 아니라 옮겨 쓰기다. 파일에 남은 압축 전 원문을 대신 읽는다.
   * Antigravity는 `brain/<번호>/.system_generated/logs/transcript.jsonl`에서 사용자 요청·답변·도구 기록을 읽는다.
     바이너리 대화 DB는 수정하지 않는다. 본문이 아직 없거나 읽을 수 없으면 전환을 중단하고 원래 탭을 유지한다.
-    인계로 시작한 대화는 `.llmtools-handoff`의 원래 내용도 포함해 다시 옮긴다.
+    인계로 시작한 대화는 `.agentclihub-handoff`의 원래 내용도 포함해 다시 옮긴다.
   * 16만 자를 넘으면 맨 앞 요약과 **첫 요청**은 남기고 중간을 줄인다(빠진 개수와 원본 경로를 적어 둔다).
 * **넘길 대화 찾기** — 띄울 때 준 번호만 믿지 않는다(`/clear` · `/resume` 으로 바뀐다). 그 탭이 뜬 뒤에 쓰인 기록 중 가장
   최근 것을 보되, 같은 폴더의 **다른 탭이 쥔 번호는 뺀다**. 고르기 창에 넘길 대화의 첫 발화가 떠서 고르기 전에 확인할 수 있다.
@@ -211,13 +211,13 @@ Enter. 탭은 그대로(이름·자리·폴더) 두고 안의 CLI 만 갈아 끼
 git clone https://github.com/OnTechnologyCo/AgentCLIHub.git
 cd AgentCLIHub
 dotnet build AgentCLIHub.sln
-.\src\LlmTools\bin\Debug\net9.0-windows\AgentCLIHub.exe
+.\src\AgentCLIHub\bin\Debug\net9.0-windows\AgentCLIHub.exe
 ```
 
 배포본을 만들려면:
 
 ```powershell
-dotnet publish src\LlmTools\LlmTools.csproj -c Release -r win-x64 --self-contained false
+dotnet publish src\AgentCLIHub\AgentCLIHub.csproj -c Release -r win-x64 --self-contained false
 ```
 
 **필요한 것**
@@ -235,8 +235,8 @@ dotnet publish src\LlmTools\LlmTools.csproj -c Release -r win-x64 --self-contain
 ```
 AgentCLIHub\
   AgentCLIHub.sln
-  src\LlmTools\
-    LlmTools.csproj
+  src\AgentCLIHub\
+    AgentCLIHub.csproj
     App.xaml(.cs)            미처리 예외를 창으로 보여 준다
     MainWindow.xaml(.cs)     WebView2 + 탭 관리 + Windows 대화상자
     ConPty.cs                가짜 콘솔 — 파이프·크기 변경·환경 덮어쓰기
@@ -273,11 +273,11 @@ AgentCLIHub\
 * **탭 안의 에이전트가 브라우저를 부리는 창구**(`agentclihub-browser.exe` ↔ 이름 있는 파이프)는
   Claude·Codex 둘 다 쓴다. Codex 는 명령을 **쓰기 제한 토큰의 샌드박스**로 돌리므로(elevated 면
   `CodexSandboxOffline/Online` 이라는 다른 계정으로까지) 파이프를 그만큼만 더 연다 —
-  나 · `CodexSandboxUsers` · **내 로그온 SID**. 대신 요청마다 **표**(`LLMTOOLS_BROWSER_TICKET`,
+  나 · `CodexSandboxUsers` · **내 로그온 SID**. 대신 요청마다 **표**(`AGENTCLIHUB_BROWSER_TICKET`,
   앱을 켤 때마다 새로 뽑아 이 앱이 띄운 터미널에만 심는다)를 본다: 앱 **밖**에서 돈 Codex 도
   같은 샌드박스 계정·로그온 SID 를 갖기 때문이다. 틀린 표는 거절하고 [기록] 에 경고로 남긴다.
 * 쪽지(“이 세션에서 쓸 수 있는 브라우저”)는 Claude 에는 `--append-system-prompt-file`, Codex 에는
-  `$CODEX_HOME/llmtools.config.toml` 의 `developer_instructions` + `-p llmtools` 로 얹는다.
+  `$CODEX_HOME/agentclihub.config.toml` 의 `developer_instructions` + `-p agentclihub` 로 얹는다.
   그 파일은 **TOML 기본 문자열이라 역슬래시를 이스케이프해야 한다** — 1.4.0 까지는 안 해서
   `C:\Program Files\…` 의 `\P` 때문에 Codex 가 설정을 통째로 못 읽고 멈췄다.
 * **처음 여는 폴더에서는 CLI 가 "이 폴더를 믿습니까"를 먼저 묻는다.** 터미널에서
@@ -287,8 +287,8 @@ AgentCLIHub\
   설정을 마치면 codex 가 **그 대화만** 권한을 자기 기본값(승인 on-request · workspace-write)으로 바꾼다 —
   설정의 샌드박스·승인보다 나중에 걸리므로 그 대화에서는 설정이 안 먹는 것처럼 보인다. 탭을 닫고 다시 열면
   설정대로 뜬다(고른 샌드박스는 기억된다). 그런 PC 에서 첫 Codex 탭을 열 때 [기록] 에 한 번 알린다.
-* **`-p llmtools` 로 뜬 Codex 는 설정 쓰기(폴더 신뢰 · 샌드박스 선택 · /model)를 `config.toml` 이 아니라
-  `llmtools.config.toml` 에 한다.** 1.5.2 까지는 앱이 그 파일을 켤 때마다(계정 홈은 탭을 띄울 때마다) 통째로
+* **`-p agentclihub` 로 뜬 Codex 는 설정 쓰기(폴더 신뢰 · 샌드박스 선택 · /model)를 `config.toml` 이 아니라
+  `agentclihub.config.toml` 에 한다.** 1.5.2 까지는 앱이 그 파일을 켤 때마다(계정 홈은 탭을 띄울 때마다) 통째로
   다시 써서 그것들이 지워졌다 — 이 앱으로만 Codex 를 쓰던 PC 에서는 새 대화·이어하기마다 위 두 창이 다시 뜨고
   권한이 매번 codex 기본값으로 바뀌었다(다른 PC 에서 신고). 1.5.3 부터는 쪽지(`developer_instructions`)만
   고쳐 쓰고 나머지는 그대로 둔다. 관리자 샌드박스 설정을 마친 흔적(`.sandbox/setup_marker.json`)이 있는데
@@ -362,7 +362,7 @@ AgentCLIHub\
   만든 커맨드라인을 **설치된 claude 2.1.270 · codex 0.154.0 에 그대로 넣어**(끝에 `--version` 을 붙여
   인자 검사만 하고 세션은 안 연다) 둘 다 받아들이는 것을 확인:
   `claude --resume <id> --model opus --effort max --permission-mode bypassPermissions --append-system-prompt-file …` ·
-  `claude --continue …` · `codex resume <id> -p llmtools` · `codex resume --last …`(그 폴더에 기록이 있을 때만) ·
+  `claude --continue …` · `codex resume <id> -p agentclihub` · `codex resume --last …`(그 폴더에 기록이 있을 때만) ·
   모든 칸을 채운 `codex resume <id> -m … -c model_reasoning_effort=… -s … -a …`.
   1.3.1 에서는 Codex 대화를 이어가도 Claude 칸의 `-m opus -c model_reasoning_effort=max` 가 붙어 나갔다(칸이 하나였다).
   화면에서는 [↻ 이어하기] 목록 60개 · 거르기 · Codex/Claude 줄을 고르면 그 세션 번호가 `tab.resume` 으로 가고
@@ -371,11 +371,11 @@ AgentCLIHub\
   codex 0.154.0 이 거절한다**(`error: invalid value 'untrusted' for '--ask-for-approval'`, exit 2).
   그래서 목록에서 뺐고, 전에 저장해 둔 값이 남아 있어도 띄울 때 걸러 낸다(안 거르면 Codex 탭이 뜨자마자 죽는다)
 * **위 `--version` 검사의 빈틈** — 인자만 보고 `-p` 의 프로필 파일은 **읽지 않는다.** 그래서 1.4.0 의
-  TOML 오류(Codex 가 `llmtools.config.toml:10:5: missing escaped value` 로 멈춤)를 못 잡았다.
+  TOML 오류(Codex 가 `agentclihub.config.toml:10:5: missing escaped value` 로 멈춤)를 못 잡았다.
   설정까지 읽히는 검사로 바꿔 확인(1.4.1):
-  * `codex -p llmtools mcp list` — 1.4.0 이 쓴 파일은 사용자 화면과 같은 오류, 새 파일은 정상 로드.
+  * `codex -p agentclihub mcp list` — 1.4.0 이 쓴 파일은 사용자 화면과 같은 오류, 새 파일은 정상 로드.
     파이썬 `tomllib` 로도 새 파일이 쪽지 본문과 **글자 하나 안 틀리고** 되돌아옴(`"""`·`'''`·끝 역슬래시·짝 없는 CR 도)
-  * `codex -p llmtools debug prompt-input` — 모델이 볼 입력에 쪽지가 developer 역할로, 경로가 그대로 들어감
+  * `codex -p agentclihub debug prompt-input` — 모델이 볼 입력에 쪽지가 developer 역할로, 경로가 그대로 들어감
 * Codex 에서 브라우저 쓰기 — 새 창구 코드를 그대로 엮은 가짜 앱(가짜 탭 `FAKE-TAB-7Q`)으로:
   * 도우미를 `codex sandbox` 안에서(elevated · unelevated) 실행 → 1.4.0 권한은 `Access to the path is denied`,
     새 권한은 통과. 샌드박스 토큰을 직접 찍어 원인 확인(쓰기 제한 토큰 · 제한 목록에 그룹이 아니라
@@ -407,7 +407,7 @@ AgentCLIHub\
     처음 돌렸을 때 팝업의 window.close() 가 **시험 창 전체를 닫는 것**을 보고 WPF 컨트롤 안의 처리기를 찾아냈다.
     도우미: 로그인 탭에서만 `open <주소> --private` 를 보냄(가짜 창구). 화면: InPrivate 표시 · 팝업이 닫히면 맨 끝 탭이 아니라 원래 탭으로
   * Codex 계정 홈: 준비한 홈에서 `codex login status` → `Not logged in`(기본 로그인이 안 샘) ·
-    `codex -p llmtools mcp list` → 기본 홈의 설정·MCP 가 읽힘 · `debug prompt-input` 에 브라우저 쪽지가 들어감
+    `codex -p agentclihub mcp list` → 기본 홈의 설정·MCP 가 읽힘 · `debug prompt-input` 에 브라우저 쪽지가 들어감
   * 계정 삭제: 계정 홈의 연결(skills · plugins · `.sandbox*`)만 끊기고 **기본 홈의 파일 수가 그대로**(샌드박스 비밀 포함)
   * 기록 읽기(실제 파일): Claude 병렬 도구 결과 196/196(사슬만 따르면 28개가 빠졌다) · 압축 5번 한 대화가 요약부터 시작 ·
     이어하기 때 부모 없이 적힌 훅 첨부를 넘어 앞 대화로 이어짐 · Codex 0.155(원격 압축 · AGENTS.md · 개발자 지침 빠짐) ·
@@ -420,10 +420,10 @@ AgentCLIHub\
     토큰 넣기(암호 칸) · 이름 · 두 번 눌러 삭제) · 페이지 오류 0
 
 * **Codex 에서 설정의 샌드박스·승인이 안 먹던 문제(1.5.3 — 다른 PC 에서 신고)** — codex 0.155.1:
-  * 이 PC 에서는 재현 안 됨: 앱이 만드는 커맨드라인(`… -s danger-full-access -a never -p llmtools`) 그대로 새 대화 ·
+  * 이 PC 에서는 재현 안 됨: 앱이 만드는 커맨드라인(`… -s danger-full-access -a never -p agentclihub`) 그대로 새 대화 ·
     이어하기(read-only · on-request 로 기록된 대화 포함)를 띄워 `/status` → 둘 다 `Full Access`. 이 PC 의 `config.toml` 에는
     `[windows] sandbox = "elevated"` 와 주요 폴더 신뢰가 이미 있었다(Codex 앱을 따로 쓰면서 생긴 것)
-  * `-p llmtools` 로 뜬 codex 에서 폴더를 믿는다고 답하면 **`llmtools.config.toml` 에** `[projects.…]` 가 적히는 것을 실측(config.toml 은 그대로)
+  * `-p agentclihub` 로 뜬 codex 에서 폴더를 믿는다고 답하면 **`agentclihub.config.toml` 에** `[projects.…]` 가 적히는 것을 실측(config.toml 은 그대로)
   * codex 소스(rust-v0.155.1)로 경로 확인: 신뢰 창은 `trust_level` 이 없으면 `-a`·`-s` 와 무관하게 뜸 · Windows 에서 방금 믿었는데
     샌드박스가 꺼져 있으면 설정 창 · 설정이 끝나면 프리셋 `auto`(on-request · workspace-write)를 세션에 덮어씀 ·
     `-p` 가 있으면 설정 쓰기가 그 프로필 파일로 감
@@ -529,10 +529,10 @@ AgentCLIHub\
 
 [기여 안내](CONTRIBUTING.md) · [보안 제보](SECURITY.md) · [라이선스·서비스 조건](LEGAL.md) · [로컬 데이터·개인정보](PRIVACY.md)
 
-## 1.8.0 이름 변경 및 자동 업그레이드
+## 1.8.1 이름 통일 및 자동 업그레이드
 
-LLM Tools의 새 이름은 **Agent CLI Hub**입니다. 실행 파일은 `AgentCLIHub.exe`, 설치 파일은
-`AgentCLIHub-Setup-1.8.0.0.exe`입니다. 기존 버전을 따로 제거할 필요 없이 설치 파일을 실행합니다.
+프로젝트 이름은 **AgentCLIHub**입니다. 실행 파일은 `AgentCLIHub.exe`, 설치 파일은
+`AgentCLIHub-Setup-1.8.1.0.exe`입니다. 기존 버전을 따로 제거할 필요 없이 설치 파일을 실행합니다.
 
 설치 프로그램이 기존 설치 위치·버전과 설정 형식·파일 잠금을 먼저 확인합니다.
 `%LOCALAPPDATA%\LlmTools`의 계정·설정·브라우저 데이터를 `%LOCALAPPDATA%\AgentCLIHub`로 이전하고,
@@ -544,6 +544,12 @@ LLM Tools의 새 이름은 **Agent CLI Hub**입니다. 실행 파일은 `AgentCL
 설치 AppId는 유지하므로 Windows에 중복 제품으로 등록하지 않습니다.
 
 프로젝트에 이미 저장된 첨부·대화 인계 파일과 외부 CLI의 대화 기록은 기존 참조를 보존합니다.
-소스의 `LlmTools` 네임스페이스·프로젝트 폴더명과 암호화 식별자는 내부 호환용입니다.
+화면·설치 이름과 소스 네임스페이스·프로젝트 폴더는 `AgentCLIHub`로 통일했습니다.
+새 첨부·인계 파일은 `.agentclihub-attachments`와 `.agentclihub-handoff`에 저장합니다.
+Codex는 `-p agentclihub`와 `agentclihub.config.toml`을 사용하며, 처음 만들 때 기존
+`llmtools.config.toml`의 신뢰·샌드박스·모델 설정을 가져옵니다. 기존 파일은 보존합니다.
+브라우저 연결 환경변수는 `AGENTCLIHUB_BROWSER_*`를 사용합니다.
+옛 이름은 구버전 설치·데이터 감지, 이전 인계 파일 읽기, 암호화 데이터 복호화에 필요한 호환 코드에만 유지합니다.
 
 이전 로직 검증: `dotnet run --project tests/MigrationChecks/MigrationChecks.csproj -c Release`
+이름 변경 호환성 검증: `dotnet run --project tests/RenameChecks/RenameChecks.csproj -c Release`

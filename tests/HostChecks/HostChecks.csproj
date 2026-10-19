@@ -6,6 +6,6 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="../../src/LlmTools/LlmTools.csproj" />
+    <ProjectReference Include="../../src/AgentCLIHub/AgentCLIHub.csproj" />
   </ItemGroup>
 </Project>

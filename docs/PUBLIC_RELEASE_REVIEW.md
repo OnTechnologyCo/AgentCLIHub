@@ -28,15 +28,15 @@ Status: **공개 / PUBLIC — published on 2026-10-10 by maintainer decision; un
 
 **B1. Claude 구독 인증 자료를 앱이 백업·저장·중개하는 기능**
 
-- `src/LlmTools/ClaudeAuthGuard.cs`는 `.credentials.json`을 읽어 DPAPI 사본을 저장하고 복원합니다.
-- `src/LlmTools/Accounts.cs`, `TerminalHost.cs` 및 `MainWindow.xaml.cs`에는 setup-token을 읽어 앱 저장소에 보관하고 CLI 실행에 주입하는 경로가 있습니다.
+- `src/AgentCLIHub/ClaudeAuthGuard.cs`는 `.credentials.json`을 읽어 DPAPI 사본을 저장하고 복원합니다.
+- `src/AgentCLIHub/Accounts.cs`, `TerminalHost.cs` 및 `MainWindow.xaml.cs`에는 setup-token을 읽어 앱 저장소에 보관하고 CLI 실행에 주입하는 경로가 있습니다.
 - [Anthropic의 공식 안내](https://code.claude.com/docs/en/legal-and-compliance)는 제3자 개발자의 Claude 계정 자격증명·세션 토큰 수집·저장·중개를 제한하며, 공급자의 자체 인증 흐름과 수정되지 않은 공식 CLI 사용을 구분합니다.
 - **필요 조치:** 앱의 토큰 수집·백업·복원·저장·주입 경로를 제거하고 공식 CLI 인증 흐름으로 정리하거나, 해당 이용 형태에 적용 가능한 공급자의 허가를 확인해야 합니다. 단순히 “사용자 책임” 문구를 추가하는 것으로 해결했다고 판단하지 않습니다.
 - 일반 터미널에서 공식 CLI를 실행하는 것 자체를 금지됐다고 판단한 것은 아닙니다. 발견한 우려는 앱이 별도로 인증 자료를 처리하는 경로입니다.
 
 **B2. 문서화되지 않은 사용량 API를 앱이 직접 호출**
 
-- `src/LlmTools/UsageProbe.cs`의 `ClaudeAsync`는 CLI OAuth 토큰으로 `api.anthropic.com/api/oauth/usage`를 직접 호출합니다.
+- `src/AgentCLIHub/UsageProbe.cs`의 `ClaudeAsync`는 CLI OAuth 토큰으로 `api.anthropic.com/api/oauth/usage`를 직접 호출합니다.
 - `CodexAccountAsync`는 기록이 없을 때 Codex 로그인 자료로 `chatgpt.com/backend-api/wham/usage`를 직접 호출합니다.
 - 코드 주석에서도 공개 API가 아니라고 설명합니다. 호출 성공이나 읽기 전용이라는 사실은 이용 허가의 증거가 아닙니다.
 - **필요 조치:** 직접 호출을 제거하고 공식 CLI가 제공하는 사용량 표시·지원된 방법으로 안내하거나, 해당 경로의 허용 여부를 확인하십시오. Codex 로컬 기록에서 이미 저장된 사용량을 읽는 경로는 직접 네트워크 호출과 구분해 검토할 수 있습니다.
@@ -46,7 +46,7 @@ Status: **공개 / PUBLIC — published on 2026-10-10 by maintainer decision; un
 
 - 최초 검토한 두 커밋의 작성자는 OnTechnologyCo이고, 해당 이력은 초기 import와 README 번역 변경입니다.
 - 이 정보만으로 회사·고객 계약, 외주 계약, 타인 소스의 사용 허가를 확인할 수 없습니다.
-- `src/LlmTools/app.ico`는 저장소의 유일한 이미지 자산입니다. 저장소에는 원 제작 출처·사용 허가 증빙이 없습니다.
+- `src/AgentCLIHub/app.ico`는 저장소의 유일한 이미지 자산입니다. 저장소에는 원 제작 출처·사용 허가 증빙이 없습니다.
 - **필요 조치:** 소유자가 자체 코드·문서·아이콘의 공개 및 MIT 제공 권한을 확인하십시오. 아이콘 출처가 불명확하면 권리가 확인된 자산으로 교체하십시오. 필요하면 법률 전문가와 계약을 확인하십시오.
 
 ### 검사 한계

@@ -6,6 +6,6 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="../../src/LlmTools/UpgradeMigration.cs" Link="UpgradeMigration.cs" />
+    <Compile Include="../../src/AgentCLIHub/UpgradeMigration.cs" Link="UpgradeMigration.cs" />
   </ItemGroup>
 </Project>
