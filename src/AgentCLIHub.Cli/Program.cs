@@ -26,22 +26,10 @@ internal static class Program
 
     private static async Task<int> Main(string[] args)
     {
-        Console.OutputEncoding = Encoding.UTF8;
-
         if (args.Length == 4 && args[0] == "--upgrade" && args[2] == "--report")
-        {
-            try
-            {
-                var result = AgentCLIHub.UpgradeMigration.RunForCurrentUser(args[1]);
-                File.WriteAllText(args[3], result, new UTF8Encoding(true));
-                return 0;
-            }
-            catch (Exception ex)
-            {
-                File.WriteAllText(args[3], ex.Message, new UTF8Encoding(true));
-                return 10;
-            }
-        }
+            return UpgradeCommand.Run(args[3], () => AgentCLIHub.UpgradeMigration.RunForCurrentUser(args[1]));
+
+        Console.OutputEncoding = Encoding.UTF8;
         if (args.Length == 0 || args[0] is "-h" or "--help" or "help")
         {
             Console.WriteLine(Usage);

@@ -311,3 +311,14 @@ and decrypt existing credentials and cookies.
 
 Run migration checks with `dotnet run --project tests/MigrationChecks/MigrationChecks.csproj -c Release`.
 Run rename compatibility checks with `dotnet run --project tests/RenameChecks/RenameChecks.csproj -c Release`.
+
+## 1.8.2 elevated installer fix
+
+Fixed exit code `-532462766` when the unelevated migration helper could not create its report in
+Setup's protected temporary directory. Setup now pre-creates the report and grants write access
+only to that file. The helper checks report access before starting data operations and returns a
+controlled error if reporting fails. Close the running app and retry with `AgentCLIHub-Setup-1.8.2.0.exe`.
+
+Run report checks with `dotnet run --project tests/InstallerChecks/InstallerChecks.csproj -c Release`.
+Installer builds also test the actual published helper with a read-only temporary directory before
+packaging. These checks do not modify the user's installation or application data.

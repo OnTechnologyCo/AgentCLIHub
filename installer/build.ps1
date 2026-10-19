@@ -59,6 +59,7 @@ New-Item -ItemType Directory -Force -Path $setup | Out-Null
 
 Write-Host '== 설치본 컴파일 =='
 $iscc = Find-ISCC
+& (Join-Path $PSScriptRoot 'test-report.ps1') -HelperPath (Join-Path $publish 'agent\agentclihub-browser.exe') -CompilerPath $iscc
 & $iscc "/DPublishDir=$publish" $iss
 if ($LASTEXITCODE) { throw "ISCC 실패 ($LASTEXITCODE)" }
 

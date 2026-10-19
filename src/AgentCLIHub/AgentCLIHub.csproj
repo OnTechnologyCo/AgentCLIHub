@@ -23,7 +23,7 @@
     <Product>AgentCLIHub</Product>
     <Title>AgentCLIHub</Title>
     <Description>Unified workspace for AI coding agent CLIs.</Description>
-    <Version>1.8.1</Version>
+    <Version>1.8.2</Version>
 
     <!-- 탐색기·작업 표시줄에 붙는 실행 파일 아이콘. -->
     <ApplicationIcon>app.ico</ApplicationIcon>

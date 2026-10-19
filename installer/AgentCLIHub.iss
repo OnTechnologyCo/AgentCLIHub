@@ -90,6 +90,8 @@ var
 function GetFileAttributes(Path: String): Cardinal;
   external 'GetFileAttributesW@kernel32.dll stdcall';
 
+#include "MigrationReport.iss"
+
 function RunMigration(Operation: String): String;
 var
   ResultCode, I: Integer;
@@ -102,18 +104,26 @@ begin
     HelperReady := True;
   end;
   ReportPath := ExpandConstant('{tmp}\agentclihub-upgrade-report.txt');
-  DeleteFile(ReportPath);
+  if not PrepareMigrationReport(ReportPath) then begin
+    Result := '설정 이전 결과 파일을 준비하지 못했습니다. 설치를 취소하고 다시 실행하세요.';
+    exit;
+  end;
   if not ExecAsOriginalUser(ExpandConstant('{tmp}\agentclihub-browser.exe'),
       '--upgrade ' + Operation + ' --report "' + ReportPath + '"', '',
       SW_HIDE, ewWaitUntilTerminated, ResultCode) then begin
     Result := '설정 이전 도우미를 실행하지 못했습니다: ' + SysErrorMessage(ResultCode);
     exit;
   end;
-  if LoadStringsFromFile(ReportPath, Lines) then
+  if LoadStringsFromFile(ReportPath, Lines) and (GetArrayLength(Lines) > 0) then
     for I := 0 to GetArrayLength(Lines) - 1 do begin
       Log('Upgrade ' + Operation + ': ' + Lines[I]);
       if ResultCode <> 0 then Result := Result + Lines[I] + #13#10;
-    end;
+    end
+  else if ResultCode = 0 then
+    Result := '설정 이전 도우미의 결과를 읽지 못했습니다. 설치를 중단했습니다.';
+  DeleteFile(ReportPath);
+  if (ResultCode = 11) and (Result = '') then
+    Result := '설정 이전 결과를 기록하지 못했습니다. 임시 파일의 쓰기 권한과 디스크 공간을 확인하세요.';
   if (ResultCode <> 0) and (Result = '') then
     Result := '기존 데이터 검사 또는 이전에 실패했습니다. 오류 코드: ' + IntToStr(ResultCode);
 end;

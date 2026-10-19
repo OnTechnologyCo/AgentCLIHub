@@ -553,3 +553,14 @@ Codex는 `-p agentclihub`와 `agentclihub.config.toml`을 사용하며, 처음 �
 
 이전 로직 검증: `dotnet run --project tests/MigrationChecks/MigrationChecks.csproj -c Release`
 이름 변경 호환성 검증: `dotnet run --project tests/RenameChecks/RenameChecks.csproj -c Release`
+
+## 1.8.2 관리자 설치 오류 수정
+
+관리자 설치에서 일반 사용자 권한의 이전 도우미가 보호된 임시 폴더에 결과 파일을 만들지 못해
+`-532462766`으로 종료되던 문제를 수정했습니다. 설치 프로그램이 결과 파일을 미리 만들고
+그 파일에만 쓰기를 허용합니다. 도우미는 결과 파일을 열 수 있는지 먼저 확인한 뒤 데이터 작업을 시작합니다.
+실행 중인 앱을 닫고 `AgentCLIHub-Setup-1.8.2.0.exe`로 다시 설치하십시오.
+
+결과 기록 검사: `dotnet run --project tests/InstallerChecks/InstallerChecks.csproj -c Release`.
+설치본 빌드는 실제 배포 도우미를 읽기 전용 임시 폴더 조건에서 검사한 뒤 패키징합니다.
+이 검사는 사용자의 설치·데이터를 변경하지 않습니다.
