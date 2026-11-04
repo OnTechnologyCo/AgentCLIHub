@@ -1,0 +1,14 @@
+.pet-settings { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 12px; align-items: center; }
+.pet-preview { width: 144px; height: 156px; flex: 0 0 144px; position: relative; border-radius: 10px; overflow: hidden;
+  background-color: #202629; background-image: conic-gradient(#30383b 25%, transparent 0 50%, #30383b 0 75%, transparent 0); background-size: 16px 16px; }
+.pet-preview canvas { width: 144px; height: 156px; }
+.pet-preview span { position: absolute; inset: 0; padding: 18px; text-align: center; display: grid; place-items: center; font-size: 12px; color: #bcc; }
+.pet-preview span[hidden] { display: none; }
+.pet-options { flex: 1; min-width: 220px; display: grid; gap: 12px; }
+.pet-options [data-pet-name] { font-weight: 600; overflow-wrap: anywhere; }
+.pet-buttons, .pet-controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.pet-controls label { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+.pet-controls input { accent-color: #67cc9d; }
+.pet-options select { background: #141414; color: #ddd; border: 1px solid #45514b; border-radius: 4px; padding: 4px 8px; margin-left: 8px; }
+.pet-options [data-pet-status] { color: #dbc68d; font-size: 12px; overflow-wrap: anywhere; }
+.pet-settings :focus-visible { outline: 2px solid #8de3ba; outline-offset: 3px; }
