@@ -160,7 +160,7 @@ internal static class Program
     }
 
     private const string Usage = """
-        agentclihub-browser — AgentCLIHub 창의 브라우저 탭을 부린다.
+        agentclihub-browser — AgentCLIHub의 브라우저와 펫을 조작한다.
 
           tabs                      열려 있는 브라우저 탭 목록
           open <주소>               새 탭을 열고 번호를 돌려준다
@@ -170,6 +170,21 @@ internal static class Program
           eval <번호> <스크립트>    그 페이지 안에서 JS 를 돌린다
           shot <번호> <저장경로>    그 탭 화면을 PNG 로 저장
           close <번호>              탭을 닫는다
+
+          pet status                현재 펫 설정, 이미지 경로, 스프라이트 규격
+          pet import <절대경로>     PNG/WebP 검사 후 등록·교체, 즉시 적용
+          pet export <새 PNG 경로>  현재 시트의 편집용 사본(기존 파일 덮어쓰기 안 함)
+          pet set location desktop|app
+          pet set visible|cursor|animation on|off
+          pet set size <50–150>
+          pet set name <이름>
+          pet reset-position        현재 표시 모드 위치 초기화
+          pet play <동작>           pet status의 states 중 하나
+
+        펫: 투명 PNG/WebP, 1536×2288, 192×208 셀, 최대 20 MiB.
+        행별 프레임 수: 6,8,8,4,5,8,6,6,6,8,8. 총 73개, 나머지 15칸은 완전 투명.
+        1–9행: idle, running-right, running-left, waving, jumping, failed, waiting, running, review.
+        10–11행: 위쪽 0°부터 시계 방향 22.5° 간격의 시선 16방향.
 
         주소 하나만 주면 open 으로 봅니다 — BROWSER 환경변수가 이 exe 를 가리키면
         CLI 가 여는 로그인 페이지가 시스템 브라우저 대신 이 앱의 탭으로 열립니다.

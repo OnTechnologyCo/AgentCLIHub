@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Input;
 using AgentCLIHub;
 
 internal static class Program
@@ -61,19 +62,61 @@ internal static class Program
             var restored = JsonSerializer.Deserialize<Settings>(JsonSerializer.Serialize(new Settings { Pet = options }))!;
             Check(restored.Pet.FileName == options.FileName && restored.Pet.X == options.X, "pet settings round trip");
             Check(!JsonSerializer.Deserialize<Settings>("{}")!.Pet.Enabled, "old settings default hidden");
+            Check(!JsonSerializer.Deserialize<Settings>("{}")!.Pet.Desktop, "old settings retain app mode");
+            options.DesktopX = -800; options.DesktopY = 250;
+            restored = JsonSerializer.Deserialize<Settings>(JsonSerializer.Serialize(new Settings { Pet = options }))!;
+            Check(restored.Pet.DesktopX == -800 && restored.Pet.DesktopY == 250, "desktop position round trip");
+            options.DesktopX = double.NaN; options.DesktopY = double.PositiveInfinity; options.Normalize();
+            Check(options.DesktopX is null && options.DesktopY is null, "invalid desktop positions reset");
+            options.SetOption("location", "desktop"); options.SetOption("size", "100");
+            options.SetOption("visible", "on"); options.SetOption("name", "별이 펫");
+            Check(options.Desktop && options.Size == 100 && options.Enabled && options.Name == "별이 펫", "agent settings apply");
+            var beforeInvalid = JsonSerializer.Serialize(options);
+            foreach (var (key, value) in new[] { ("size", "49"), ("size", "151"), ("visible", "maybe"), ("location", "outside"), ("FileName", "../other.png") })
+            {
+                try { options.SetOption(key, value); throw new Exception("Invalid option accepted: " + key); }
+                catch (ArgumentException) { Check(JsonSerializer.Serialize(options) == beforeInvalid, "invalid option leaves pet unchanged: " + key + value); }
+            }
+            options.Desktop = false;
+            if (args.Contains("--bridge")) return AgentChecks.Run();
             if (args.Contains("--web")) return BrowserChecks.Run(png);
             if (args.Contains("--ui"))
             {
-                var app = new Application();
+                var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
                 var owner = new Window { Width = 800, Height = 600, Title = "AgentCLIHub Pet UI Check", Background = Brushes.DimGray };
                 owner.Show(); options.Enabled = true;
-                var pet = new PetWindow(owner, decoded, options, (_, _) => { });
+                var positionSaved = false;
+                var pet = new PetWindow(owner, decoded, options, _ => positionSaved = true);
                 foreach (var state in PetSheet.States) pet.Play(state);
                 owner.WindowState = WindowState.Minimized; Check(!pet.IsVisible, "minimized pet hidden");
                 owner.WindowState = WindowState.Normal;
                 owner.Width = 600; owner.Height = 500;
                 pet.Configure(options); Check(pet.IsVisible, "restored pet visible");
-                pet.Close(); owner.Close(); app.Shutdown();
+                Check(pet.Owner == owner && !pet.Topmost, "app mode remains owned and not topmost");
+                var appX = options.X; var appY = options.Y;
+                options.Desktop = true; pet.Configure(options);
+                Check(pet.Owner is null && pet.Topmost && pet.IsVisible, "desktop unowned, topmost and visible");
+                var desktopPosition = pet.PointToScreen(new Point());
+                owner.Left += 40; owner.Top += 40; owner.Width += 20;
+                Check((pet.PointToScreen(new Point()) - desktopPosition).Length < 2, "desktop independent of app move and resize");
+                owner.WindowState = WindowState.Minimized;
+                Check(pet.IsVisible, "desktop stays visible while app minimized");
+                owner.Hide(); Check(pet.IsVisible, "desktop stays visible while app hidden");
+                owner.Show(); owner.WindowState = WindowState.Normal;
+                pet.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(pet), 0, Key.Left) { RoutedEvent = Keyboard.KeyDownEvent });
+                Check(positionSaved && options.DesktopX < desktopPosition.X, "desktop keyboard move saves physical position");
+                Check(options.X == appX && options.Y == appY, "desktop motion preserves app position");
+                options.DesktopX = -1000000; options.DesktopY = -1000000; pet.Configure(options);
+                Check(options.DesktopX > -1000000 && options.DesktopY > -1000000, "off-screen position recovered");
+                var desktopX = options.DesktopX; var desktopY = options.DesktopY;
+                options.Desktop = false; pet.Configure(options);
+                Check(pet.Owner == owner && !pet.Topmost, "switch back restores app ownership");
+                owner.WindowState = WindowState.Minimized;
+                Check(!pet.IsVisible, "app mode hides after switching back");
+                options.Desktop = true; pet.Configure(options);
+                Check(pet.IsVisible && options.DesktopX == desktopX && options.DesktopY == desktopY, "desktop restored while app minimized");
+                var closed = false; pet.Closed += (_, _) => closed = true;
+                owner.Close(); Check(closed, "unowned desktop pet closes with app"); app.Shutdown();
             }
             Console.WriteLine($"PASS: {checks} pet checks"); return 0;
         }

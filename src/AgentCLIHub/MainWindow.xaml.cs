@@ -130,6 +130,7 @@ public partial class MainWindow : Window
         e.Cancel = true;
         if (_closingStarted) return;
         _closingStarted = true;
+        _petImportCompletion?.TrySetException(new InvalidOperationException("Application is closing."));
         _petWindow?.Close(); _petWindow = null;
 
         try
@@ -1938,6 +1939,8 @@ public partial class MainWindow : Window
 
         switch (cmd)
         {
+            case "pet":
+                return await AgentPetCommand(a);
             case "tabs":
                 return _order
                     .Where(_browsers.ContainsKey)
@@ -2007,7 +2010,7 @@ public partial class MainWindow : Window
 
             default:
                 throw new ArgumentException(
-                    $"모르는 명령 '{cmd}' — tabs · open · goto · back · forward · reload · text · eval · shot · close");
+                    $"모르는 명령 '{cmd}' — tabs · open · goto · back · forward · reload · text · eval · shot · close · pet");
         }
     }
 

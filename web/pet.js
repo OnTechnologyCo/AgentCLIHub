@@ -108,6 +108,7 @@
     panel.querySelector('[data-pet-status]').setAttribute('aria-busy', String(busy));
     for (const key of ['Enabled', 'Animate', 'FollowCursor']) panel.querySelector(`[data-pet-key="${key}"]`).checked = !!settings[key];
     panel.querySelector('[data-pet-key="Size"]').value = String(settings.Size || 75);
+    panel.querySelector('[data-pet-key="Desktop"]').value = settings.Desktop ? 'desktop' : 'app';
     panel.querySelector('[data-pet-import]').disabled = busy;
     panel.querySelector('[data-pet-remove]').disabled = busy || !settings.FileName;
     panel.querySelector('[data-pet-empty]').hidden = !!image;
@@ -131,7 +132,7 @@
 
   window.PetUI = {
     apply(value) {
-      settings = { Enabled: false, Size: 75, FollowCursor: true, Animate: true, ...value };
+      settings = { Enabled: false, Size: 75, FollowCursor: true, Animate: true, Desktop: false, ...value };
       if (settings.FileName !== loaded) { image = null; loaded = ''; }
       updatePanel();
     },
@@ -148,6 +149,13 @@
       const remove = button('펫 제거', () => send({ t: 'pet.remove' })); remove.dataset.petRemove = '';
       buttons.append(pick, remove);
       const controls = panel.querySelector('.pet-controls');
+      const modeLabel = document.createElement('label'); modeLabel.textContent = tr('표시 위치');
+      const mode = document.createElement('select'); mode.dataset.petKey = 'Desktop';
+      for (const [value, label] of [['app', '프로그램 안'], ['desktop', '바탕화면']]) {
+        const option = document.createElement('option'); option.value = value; option.textContent = tr(label); mode.append(option);
+      }
+      mode.addEventListener('change', () => { settings.Desktop = mode.value === 'desktop'; send({ t: 'pet.save', v: settings }); });
+      modeLabel.append(mode); controls.append(modeLabel);
       for (const [key, label] of [['Enabled', '펫 표시'], ['FollowCursor', '마우스 시선 추적'], ['Animate', '애니메이션']]) {
         const l = document.createElement('label'), input = document.createElement('input'); input.type = 'checkbox'; input.dataset.petKey = key;
         input.addEventListener('change', () => { settings[key] = input.checked; send({ t: 'pet.save', v: settings }); });
@@ -170,12 +178,14 @@
       note.textContent = tr('1536 × 2288 · 프레임 192 × 208 · 73프레임 · 투명 PNG / WebP · 최대 20 MiB. 설정은 즉시 저장됩니다.'); parent.append(note);
       const usage = document.createElement('p'); usage.className = 'note';
       usage.textContent = tr('클릭: 인사 · 두 번 클릭: 점프 · 드래그: 이동 · 우클릭: 9종 동작. 작업 중 표시는 CLI 입력·출력 활동에 반응하며 실제 작업 완료를 판정하지 않습니다.'); parent.append(usage);
+      const desktopNote = document.createElement('p'); desktopNote.className = 'note';
+      desktopNote.textContent = tr('바탕화면에서는 창 밖으로 이동할 수 있고 다른 창 위에 표시됩니다. 프로그램을 최소화해도 유지되며 종료하면 함께 닫힙니다.'); parent.append(desktopNote);
       updatePanel();
     },
     async handle(m) {
       if (m.t === 'pet.decode') {
         try { const png = await normalize(from64(m.data), m.mime); send({ t: 'pet.commit', id: m.id, data: to64(png) }); }
-        catch (e) { busy = false; report(tr(e.message)); send({ t: 'pet.reject', id: m.id }); }
+        catch (e) { busy = false; report(tr(e.message)); send({ t: 'pet.reject', id: m.id, error: tr(e.message) }); }
       } else if (m.t === 'pet.preview') {
         try {
           const next = await loadImage('data:image/png;base64,' + m.data);

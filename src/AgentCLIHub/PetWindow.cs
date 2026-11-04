@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
@@ -10,17 +11,18 @@ using System.Windows.Threading;
 using Image = System.Windows.Controls.Image;
 using Point = System.Windows.Point;
 using Brushes = System.Windows.Media.Brushes;
+using Screen = System.Windows.Forms.Screen;
 
 namespace AgentCLIHub;
 
-// An owned window keeps the sprite above native browser tabs without making it globally topmost.
+// App mode uses an owner; desktop mode must be unowned to survive app minimization.
 public sealed class PetWindow : Window
 {
     private readonly Window _owner;
     private readonly Image _image = new() { Stretch = Stretch.Fill };
     private readonly BitmapSource[][] _frames;
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(120) };
-    private readonly Action<double, double> _savePosition;
+    private readonly Action<PetSettings> _savePosition;
     private readonly Stopwatch _clock = Stopwatch.StartNew();
     private PetSettings _settings;
     private string _activity = "idle", _gesture = "idle", _drawnState = "";
@@ -30,7 +32,7 @@ public sealed class PetWindow : Window
     private Point _dragOrigin;
     private bool _moved;
 
-    public PetWindow(Window owner, BitmapSource sheet, PetSettings settings, Action<double, double> savePosition)
+    public PetWindow(Window owner, BitmapSource sheet, PetSettings settings, Action<PetSettings> savePosition)
     {
         _owner = owner; Owner = owner; _settings = settings; _savePosition = savePosition;
         WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.NoResize;
@@ -43,6 +45,7 @@ public sealed class PetWindow : Window
         _owner.SizeChanged += OwnerResized;
         _owner.StateChanged += OwnerMoved;
         _owner.IsVisibleChanged += OwnerVisibility;
+        _owner.Closed += OwnerClosed;
         MouseLeftButtonDown += StartDrag;
         MouseMove += MoveDrag;
         MouseLeftButtonUp += EndDrag;
@@ -56,6 +59,7 @@ public sealed class PetWindow : Window
             _owner.SizeChanged -= OwnerResized;
             _owner.StateChanged -= OwnerMoved;
             _owner.IsVisibleChanged -= OwnerVisibility;
+            _owner.Closed -= OwnerClosed;
         };
         Configure(settings);
         _timer.Start();
@@ -65,6 +69,8 @@ public sealed class PetWindow : Window
     public void Configure(PetSettings settings)
     {
         settings.Normalize(); _settings = settings;
+        Owner = settings.Desktop ? null : _owner;
+        Topmost = settings.Desktop;
         Width = PetSheet.CellWidth * settings.Size / 100d;
         Height = PetSheet.CellHeight * settings.Size / 100d;
         Title = string.IsNullOrEmpty(settings.Name) ? "AgentCLIHub Pet" : settings.Name;
@@ -101,8 +107,9 @@ public sealed class PetWindow : Window
 
     private void Tick()
     {
-        if (!_settings.Enabled || !_owner.IsVisible || _owner.WindowState == WindowState.Minimized) { Hide(); return; }
+        if (!_settings.Enabled || (!_settings.Desktop && (!_owner.IsVisible || _owner.WindowState == WindowState.Minimized))) { Hide(); return; }
         if (!IsVisible) Show();
+        if (_settings.Desktop && _dragStart is null) Reposition();
         var now = _clock.ElapsedMilliseconds;
         var state = now < _gestureUntil ? _gesture : now < _activityUntil ? _activity : "idle";
         if (_drawnState != state) { _drawnState = state; _frameStart = now; }
@@ -111,9 +118,9 @@ public sealed class PetWindow : Window
         if (_settings.FollowCursor && state == "idle" && _dragStart is null && GetCursorPos(out var pointer))
         {
             var point = PointFromScreen(new Point(pointer.X, pointer.Y));
-            var inOwner = _owner.PointFromScreen(new Point(pointer.X, pointer.Y));
+            var inOwner = _settings.Desktop ? new Point() : _owner.PointFromScreen(new Point(pointer.X, pointer.Y));
             var dx = point.X - Width / 2; var dy = point.Y - Height / 2;
-            if (inOwner.X >= 0 && inOwner.Y >= 0 && inOwner.X <= _owner.ActualWidth && inOwner.Y <= _owner.ActualHeight &&
+            if ((_settings.Desktop || (inOwner.X >= 0 && inOwner.Y >= 0 && inOwner.X <= _owner.ActualWidth && inOwner.Y <= _owner.ActualHeight)) &&
                 dx * dx + dy * dy > 40 * 40)
             {
                 var direction = PetSheet.Direction(dx, dy);
@@ -127,9 +134,27 @@ public sealed class PetWindow : Window
     private void OwnerMoved(object? sender, EventArgs e) { Reposition(); Tick(); }
     private void OwnerResized(object sender, SizeChangedEventArgs e) => Reposition();
     private void OwnerVisibility(object sender, DependencyPropertyChangedEventArgs e) => Tick();
+    private void OwnerClosed(object? sender, EventArgs e) => Close();
 
     private void Reposition()
     {
+        if (_settings.Desktop)
+        {
+            var handle = new WindowInteropHelper(this).EnsureHandle();
+            var desktopDpi = VisualTreeHelper.GetDpi(this);
+            var width = (int)Math.Ceiling(Width * desktopDpi.DpiScaleX);
+            var height = (int)Math.Ceiling(Height * desktopDpi.DpiScaleY);
+            var area = Screen.FromHandle(new WindowInteropHelper(_owner).Handle).WorkingArea;
+            var x = _settings.DesktopX ?? area.Right - width - 8;
+            var y = _settings.DesktopY ?? area.Bottom - height - 8;
+            area = Screen.FromPoint(new System.Drawing.Point((int)(x + width / 2d), (int)(y + height / 2d))).WorkingArea;
+            x = Math.Clamp(x, area.Left, Math.Max(area.Left, area.Right - width));
+            y = Math.Clamp(y, area.Top, Math.Max(area.Top, area.Bottom - height));
+            _settings.DesktopX = x; _settings.DesktopY = y;
+            if (!GetWindowRect(handle, out var bounds) || bounds.Left != (int)x || bounds.Top != (int)y)
+                SetWindowPos(handle, IntPtr.Zero, (int)x, (int)y, 0, 0, 0x0015); // No size, z-order, or activation change.
+            return;
+        }
         if (!_owner.IsLoaded || _owner.WindowState == WindowState.Minimized) return;
         var origin = _owner.PointToScreen(new Point(0, 0));
         var dpi = VisualTreeHelper.GetDpi(_owner);
@@ -141,7 +166,8 @@ public sealed class PetWindow : Window
     {
         if (e.ClickCount == 2) { Play("jumping"); e.Handled = true; return; }
         if (!GetCursorPos(out var point)) return;
-        _dragStart = new Point(point.X, point.Y); _dragOrigin = new Point(_settings.X, _settings.Y);
+        _dragStart = new Point(point.X, point.Y);
+        _dragOrigin = _settings.Desktop ? new Point(_settings.DesktopX ?? 0, _settings.DesktopY ?? 0) : new Point(_settings.X, _settings.Y);
         _moved = false; CaptureMouse(); e.Handled = true;
     }
 
@@ -151,11 +177,19 @@ public sealed class PetWindow : Window
         var dx = point.X - start.X; var dy = point.Y - start.Y;
         if (!_moved && Math.Abs(dx) + Math.Abs(dy) < 6) return;
         _moved = true;
-        var dpi = VisualTreeHelper.GetDpi(_owner);
-        var previous = _settings.X;
-        _settings.X = Math.Clamp(_dragOrigin.X + dx / dpi.DpiScaleX / Math.Max(1, _owner.ActualWidth - Width - 16), 0, 1);
-        _settings.Y = Math.Clamp(_dragOrigin.Y + dy / dpi.DpiScaleY / Math.Max(1, _owner.ActualHeight - Height - 16), 0, 1);
-        _gesture = _settings.X >= previous ? "running-right" : "running-left";
+        var previous = _settings.Desktop ? _settings.DesktopX ?? 0 : _settings.X;
+        if (_settings.Desktop)
+        {
+            _settings.DesktopX = _dragOrigin.X + dx;
+            _settings.DesktopY = _dragOrigin.Y + dy;
+        }
+        else
+        {
+            var dpi = VisualTreeHelper.GetDpi(_owner);
+            _settings.X = Math.Clamp(_dragOrigin.X + dx / dpi.DpiScaleX / Math.Max(1, _owner.ActualWidth - Width - 16), 0, 1);
+            _settings.Y = Math.Clamp(_dragOrigin.Y + dy / dpi.DpiScaleY / Math.Max(1, _owner.ActualHeight - Height - 16), 0, 1);
+        }
+        _gesture = (_settings.Desktop ? _settings.DesktopX ?? 0 : _settings.X) >= previous ? "running-right" : "running-left";
         _gestureUntil = _clock.ElapsedMilliseconds + 240;
         Reposition(); Tick();
     }
@@ -164,7 +198,7 @@ public sealed class PetWindow : Window
     {
         if (_dragStart is null) return;
         _dragStart = null; ReleaseMouseCapture();
-        if (_moved) { _gestureUntil = 0; _savePosition(_settings.X, _settings.Y); }
+        if (_moved) { _gestureUntil = 0; _savePosition(_settings); }
         else Play("waving");
         e.Handled = true;
     }
@@ -175,16 +209,21 @@ public sealed class PetWindow : Window
         {
             case Key.Enter: Play("waving"); break;
             case Key.Space: Play("jumping"); break;
-            case Key.Left: _settings.X -= .05; break;
-            case Key.Right: _settings.X += .05; break;
-            case Key.Up: _settings.Y -= .05; break;
-            case Key.Down: _settings.Y += .05; break;
+            case Key.Left: if (_settings.Desktop) _settings.DesktopX -= 20; else _settings.X -= .05; break;
+            case Key.Right: if (_settings.Desktop) _settings.DesktopX += 20; else _settings.X += .05; break;
+            case Key.Up: if (_settings.Desktop) _settings.DesktopY -= 20; else _settings.Y -= .05; break;
+            case Key.Down: if (_settings.Desktop) _settings.DesktopY += 20; else _settings.Y += .05; break;
             default: return;
         }
-        _settings.Normalize(); Reposition(); _savePosition(_settings.X, _settings.Y); e.Handled = true;
+        _settings.Normalize(); Reposition(); _savePosition(_settings); e.Handled = true;
     }
 
     [StructLayout(LayoutKind.Sequential)] private struct CursorPoint { public int X; public int Y; }
     [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool GetCursorPos(out CursorPoint point);
+    [StructLayout(LayoutKind.Sequential)] private struct WindowRect { public int Left, Top, Right, Bottom; }
+    [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetWindowRect(IntPtr handle, out WindowRect rect);
+    [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetWindowPos(IntPtr handle, IntPtr after, int x, int y, int width, int height, uint flags);
 }

@@ -1,6 +1,10 @@
 // App interface strings. CLI output and user content are not translated.
 window.AGENTCLIHUB_UI_EN = {
   "펫": "Pet",
+  "표시 위치": "Display location",
+  "프로그램 안": "Inside app",
+  "바탕화면": "Desktop",
+  "바탕화면에서는 창 밖으로 이동할 수 있고 다른 창 위에 표시됩니다. 프로그램을 최소화해도 유지되며 종료하면 함께 닫힙니다.": "On the desktop, move the pet outside the app and above other windows. It stays visible when the app is minimized and closes when the app exits.",
   "펫 미리보기": "Pet preview",
   "가만히 있기": "Idle",
   "우측 이동": "Move right",
