@@ -80,10 +80,14 @@ internal static class BrowserChecks
                           assert(canvas.getContext('2d').getImageData(40,40,1,1).data[3] === 255, 'preview '+option.value);
                         }
                         const size = document.querySelector('[data-pet-key="Size"]'); size.value = '125'; size.dispatchEvent(new Event('change'));
+                        await wait(100);
+                        const mode = document.querySelector('[data-pet-key="Desktop"]'); mode.value = 'desktop'; mode.dispatchEvent(new Event('change'));
+                        await wait(100); assert(mode.value === 'desktop', 'desktop mode preference');
                         const enabled = document.querySelector('[data-pet-key="Enabled"]'); enabled.click(); await wait(100);
                         assert(!enabled.checked, 'hidden preference');
                         applyLanguage('en');
                         assert(document.querySelector('[data-pet-import]').textContent === 'Import / replace image', 'English pet labels');
+                        assert(document.querySelector('[data-pet-key="Desktop"]').selectedOptions[0].textContent === 'Desktop', 'English desktop mode and persisted selection');
                         const all = document.createElement('canvas'); all.width=1536; all.height=2288; const ctx=all.getContext('2d');
                         for(let r=0;r<11;r++) for(let c=0;c<PetFormat.counts[r];c++) { ctx.fillStyle='rgb(100,150,200)'; ctx.fillRect(c*192+30,r*208+30,100,140); }
                         const webp = await new Promise(r=>all.toBlob(r,'image/webp',1));
@@ -100,7 +104,7 @@ internal static class BrowserChecks
                     })();
                     """);
                 await complete.Task.WaitAsync(TimeSpan.FromSeconds(30));
-                if (saved != 2 || imported != 1) throw new Exception($"Expected import/save messages: {imported}/{saved}");
+                if (saved != 3 || imported != 1 || !options.Desktop) throw new Exception($"Expected import/save messages and desktop mode: {imported}/{saved}/{options.Desktop}");
                 var output = Path.Combine(root, "artifacts", "pet-checks"); Directory.CreateDirectory(output);
                 using (var screenshot = File.Create(Path.Combine(output, "settings.png")))
                     await web.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, screenshot);

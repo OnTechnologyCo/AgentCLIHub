@@ -358,7 +358,7 @@ Update with `AgentCLIHub-Setup-1.8.3.0.exe` and restart the app to apply the gui
 
 
 
-## Pet (1.9.0)
+## Pet (1.9.1)
 
 Open **Settings → Pet** to import a transparent PNG/WebP sprite sheet, up to 20 MiB,
 exactly 1536×2288 pixels: 8 columns and 11 rows of 192×208 cells. Animated PNG/WebP files are rejected.
@@ -385,9 +385,16 @@ Settings preview every action and direction. Animation advances every 120 ms.
 - Visibility, size (50–150%), cursor tracking, and animation save and apply immediately. Hidden by default; enabled on import.
 - Click to wave, double-click to jump, drag to move with directional animation. Position persists and can be reset.
 - Right-click for all nine actions. With keyboard focus on the pet, Enter waves, Space jumps, and arrow keys move it.
-- The transparent owned window appears over CLI, browser, and settings tabs and follows the app's minimize/close lifecycle.
+- Choose **Display location → Inside app / Desktop**. Inside app is the default, appears over CLI/browser/settings tabs and follows minimization.
+- Desktop mode stays above other windows and remains visible when the app is minimized. Drag it outside the app or onto another monitor; it closes when the app exits.
+- Each mode saves its position separately. Off-screen positions are clamped to a connected monitor's work area; Reset position applies to the selected mode.
 - Active CLI input/output triggers working, process ready triggers waiting, normal process exit triggers review, and errors/nonzero exit trigger failure.
   Activity falls back to idle after three seconds without an update (four for exit/failure). This is not a detector of actual LLM task completion or approval prompts.
 - Invalid imports preserve the current pet. Removing a pet deletes only the app's copy.
 
-Checks: `dotnet run --project tests/PetChecks/PetChecks.csproj` and `node tests/pet_format_checks.cjs`.
+New Codex/Claude sessions receive sprite construction rules and registration commands as internal instructions, without a startup announcement or popup.
+Agents can run `& $env:AGENTCLIHUB_BROWSER_CLI pet status`, export an editable copy with `pet export <new absolute PNG path>`,
+then validate and register their creation with `pet import <absolute PNG/WebP path>`. Other commands include `pet set location desktop|app`,
+`pet set size 100`, and `pet set visible on|off`. Image creation uses the agent's available tools; no image generation model is bundled.
+
+Checks: `dotnet run --project tests/PetChecks/PetChecks.csproj -- --ui`, `--web` and `node tests/pet_format_checks.cjs`.

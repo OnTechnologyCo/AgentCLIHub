@@ -13,6 +13,9 @@ public sealed class PetSettings
     public int Size { get; set; } = 75;
     public bool FollowCursor { get; set; } = true;
     public bool Animate { get; set; } = true;
+    public bool Desktop { get; set; }
+    public double? DesktopX { get; set; }
+    public double? DesktopY { get; set; }
     public double X { get; set; } = 1;
     public double Y { get; set; } = 1;
 
@@ -21,6 +24,29 @@ public sealed class PetSettings
         Size = Math.Clamp(Size, 50, 150);
         X = double.IsFinite(X) ? Math.Clamp(X, 0, 1) : 1;
         Y = double.IsFinite(Y) ? Math.Clamp(Y, 0, 1) : 1;
+        DesktopX = DesktopX is { } x && double.IsFinite(x) ? Math.Clamp(x, -1000000, 1000000) : null;
+        DesktopY = DesktopY is { } y && double.IsFinite(y) ? Math.Clamp(y, -1000000, 1000000) : null;
+    }
+
+    public void SetOption(string key, string value)
+    {
+        bool OnOff() => value switch { "on" => true, "off" => false, _ => throw new ArgumentException("Expected on or off.") };
+        switch (key)
+        {
+            case "location":
+                Desktop = value switch { "desktop" => true, "app" => false, _ => throw new ArgumentException("Expected desktop or app.") }; break;
+            case "visible": Enabled = OnOff(); break;
+            case "cursor": FollowCursor = OnOff(); break;
+            case "animation": Animate = OnOff(); break;
+            case "size":
+                if (!int.TryParse(value, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var size) || size is < 50 or > 150)
+                    throw new ArgumentException("Pet size must be 50–150.");
+                Size = size; break;
+            case "name":
+                if (value.Length is 0 or > 120 || value.Any(char.IsControl)) throw new ArgumentException("Pet name must be 1–120 characters without control characters.");
+                Name = value; break;
+            default: throw new ArgumentException("Unknown pet option: location, size, visible, cursor, animation, name.");
+        }
     }
 }
 
