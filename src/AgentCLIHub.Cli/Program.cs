@@ -172,8 +172,12 @@ internal static class Program
           close <번호>              탭을 닫는다
 
           pet status                현재 펫 설정, 이미지 경로, 스프라이트 규격
-          pet import <절대경로>     PNG/WebP 검사 후 등록·교체, 즉시 적용
-          pet export <새 PNG 경로>  현재 시트의 편집용 사본(기존 파일 덮어쓰기 안 함)
+          pet list                  저장된 펫 목록과 선택된 ID
+          pet import <절대경로>     PNG/WebP 검사 후 목록에 추가·선택 (기존 펫 보존)
+          pet select <id>           저장된 펫 선택·표시
+          pet update <id> <경로>    해당 펫 이미지만 교체 (ID·이름·선택 유지)
+          pet remove <id>           해당 펫과 앱이 보관한 사본만 삭제
+          pet export <새 PNG 경로> [id]  지정 펫 또는 현재 펫의 편집용 사본
           pet set location desktop|app
           pet set visible|cursor|animation on|off
           pet set size <50–150>

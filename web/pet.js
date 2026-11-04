@@ -95,6 +95,8 @@
   const tr = (...args) => window.tr(...args);
   let settings = {}, panel = null, image = null, loaded = '', requested = '', frame = 0, preview = 'idle', busy = false;
   let status = '', active = '', lastActivity = 0;
+  let library = null, libraryItems = [], pendingDelete = '';
+  const thumbnails = new Map();
   const button = (label, action) => {
     const el = document.createElement('button'); el.type = 'button'; el.className = 'btn'; el.textContent = tr(label);
     el.addEventListener('click', action); return el;
@@ -102,6 +104,12 @@
   const report = message => { status = message; updatePanel(); };
 
   function updatePanel() {
+    if (library?.open) {
+      library.querySelector('[data-library-status]').textContent = tr(status);
+      library.querySelector('[data-library-status]').setAttribute('aria-busy', String(busy));
+      for (const b of library.querySelectorAll('[data-pet-mutate]'))
+        b.disabled = busy || (b.dataset.petAction === 'select' && b.dataset.petId === settings.SelectedId && settings.Enabled);
+    }
     if (!panel?.isConnected) return;
     panel.querySelector('[data-pet-name]').textContent = settings.Name || tr('등록된 펫이 없습니다.');
     panel.querySelector('[data-pet-status]').textContent = tr(status);
@@ -110,12 +118,89 @@
     panel.querySelector('[data-pet-key="Size"]').value = String(settings.Size || 75);
     panel.querySelector('[data-pet-key="Desktop"]').value = settings.Desktop ? 'desktop' : 'app';
     panel.querySelector('[data-pet-import]').disabled = busy;
-    panel.querySelector('[data-pet-remove]').disabled = busy || !settings.FileName;
     panel.querySelector('[data-pet-empty]').hidden = !!image;
     if (settings.FileName && requested !== settings.FileName && loaded !== settings.FileName) {
       requested = settings.FileName; send({ t: 'pet.get' });
     }
     paintPreview();
+  }
+
+  function mutate(message, text = '펫을 적용하는 중…') {
+    busy = true; report(text); send(message);
+  }
+
+  function paintThumbnail(row, item) {
+    const area = row.querySelector('.pet-library-thumb'); area.replaceChildren();
+    const value = thumbnails.get(item.FileName);
+    if (value?.data) {
+      const img = document.createElement('img'); img.src = 'data:image/png;base64,' + value.data; img.alt = item.Name;
+      area.append(img);
+    } else {
+      const text = document.createElement('span');
+      text.textContent = tr(value?.error ? '미리보기를 읽지 못했습니다.' : '미리보기 불러오는 중…'); area.append(text);
+    }
+  }
+
+  function paintLibrary() {
+    if (!library?.open) return;
+    const focus = document.activeElement?.dataset;
+    const focusedId = focus?.petId, focusedAction = focus?.petAction;
+    const list = library.querySelector('[data-pet-list]'); list.replaceChildren();
+    library.querySelector('[data-library-count]').textContent = String(libraryItems.length);
+    if (!libraryItems.length) {
+      const empty = document.createElement('p'); empty.className = 'pet-library-empty';
+      empty.textContent = tr('저장된 펫이 없습니다. 이미지 추가로 첫 펫을 등록하세요.'); list.append(empty);
+    }
+    for (const item of libraryItems) {
+      const row = document.createElement('li'); row.dataset.petId = item.Id;
+      const selected = item.Id === settings.SelectedId; row.classList.toggle('selected', selected);
+      const thumb = document.createElement('div'); thumb.className = 'pet-library-thumb';
+      const info = document.createElement('div'); info.className = 'pet-library-info';
+      const name = document.createElement('strong'); name.textContent = item.Name; name.title = item.Name;
+      const badge = document.createElement('span'); badge.className = 'pet-library-badge';
+      badge.textContent = selected ? tr(settings.Enabled ? '사용 중' : '선택됨 · 숨김') : tr('저장됨');
+      info.append(name, badge);
+      const actions = document.createElement('div'); actions.className = 'pet-library-actions';
+      const action = (label, kind, handler) => {
+        const b = button(label, handler); b.dataset.petId = item.Id; b.dataset.petAction = kind; b.dataset.petMutate = '';
+        b.setAttribute('aria-label', item.Name + ' — ' + tr(label)); actions.append(b);
+      };
+      if (pendingDelete === item.Id) {
+        const warning = document.createElement('span'); warning.className = 'pet-library-confirm';
+        warning.textContent = tr('이 펫을 삭제할까요?'); actions.append(warning);
+        action('삭제 확인', 'confirm-delete', () => mutate({ t: 'pet.remove', itemId: item.Id }));
+        action('취소', 'cancel-delete', () => { pendingDelete = ''; paintLibrary(); });
+      } else {
+        action('사용하기', 'select', () => mutate({ t: 'pet.select', itemId: item.Id }));
+        action('이미지 교체', 'update', () => mutate({ t: 'pet.pick', itemId: item.Id }, '이미지를 선택하고 검사하는 중…'));
+        action('삭제', 'delete', () => { pendingDelete = item.Id; paintLibrary(); });
+      }
+      row.append(thumb, info, actions); list.append(row); paintThumbnail(row, item);
+    }
+    updatePanel();
+    if (focusedId && focusedAction) {
+      const target = [...library.querySelectorAll('button')].find(b => b.dataset.petId === focusedId && b.dataset.petAction === focusedAction);
+      if (target && !target.disabled) target.focus();
+    }
+  }
+
+  function openLibrary() {
+    if (library?.open) { library.focus(); return; }
+    const dialog = document.createElement('dialog'); library = dialog; dialog.className = 'pet-library';
+    dialog.setAttribute('aria-labelledby', 'pet-library-title');
+    dialog.innerHTML = '<header><div><h2 id="pet-library-title"></h2><span data-library-description></span></div><span data-library-count></span></header><div class="pet-library-toolbar"></div><ul data-pet-list></ul><div data-library-status role="status"></div>';
+    dialog.querySelector('h2').textContent = tr('내 펫 목록');
+    dialog.querySelector('[data-library-description]').textContent = tr('이미지를 보관하고 사용할 펫을 선택하세요.');
+    const add = button('이미지 추가', () => mutate({ t: 'pet.pick' }, '이미지를 선택하고 검사하는 중…'));
+    add.dataset.petAdd = ''; add.dataset.petMutate = '';
+    const close = button('닫기', () => dialog.close()); close.dataset.petLibraryClose = '';
+    dialog.querySelector('.pet-library-toolbar').append(add, close);
+    dialog.addEventListener('close', () => {
+      dialog.remove(); if (library === dialog) library = null;
+      pendingDelete = ''; send({ t: 'pet.list.close' });
+    });
+    document.body.append(dialog); dialog.showModal();
+    libraryItems = settings.Items || []; pendingDelete = ''; paintLibrary(); add.focus(); send({ t: 'pet.list' });
   }
 
   function paintPreview() {
@@ -135,8 +220,10 @@
       settings = { Enabled: false, Size: 75, FollowCursor: true, Animate: true, Desktop: false, ...value };
       if (settings.FileName !== loaded) { image = null; loaded = ''; }
       updatePanel();
+      if (library?.open) { pendingDelete = ''; send({ t: 'pet.list' }); }
     },
     render(parent) {
+      if (library?.open) library.close();
       parent.querySelector('.grid')?.remove();
       panel = document.createElement('div'); panel.className = 'pet-settings';
       panel.innerHTML = '<div class="pet-preview"><canvas width="192" height="208" aria-label="Pet preview"></canvas><span data-pet-empty></span></div><div class="pet-options"><div data-pet-name></div><div class="pet-buttons"></div><div class="pet-controls"></div><div class="pet-actions"></div><div data-pet-status role="status"></div></div>';
@@ -144,10 +231,9 @@
       panel.querySelector('[data-pet-empty]').textContent = tr('PNG / WebP 이미지를 등록하세요.');
       panel.querySelector('canvas').setAttribute('aria-label', tr('펫 미리보기'));
       const buttons = panel.querySelector('.pet-buttons');
-      const pick = button('이미지 등록 / 교체', () => { busy = true; report('이미지를 선택하고 검사하는 중…'); send({ t: 'pet.pick' }); });
+      const pick = button('이미지 등록 / 목록', openLibrary);
       pick.dataset.petImport = '';
-      const remove = button('펫 제거', () => send({ t: 'pet.remove' })); remove.dataset.petRemove = '';
-      buttons.append(pick, remove);
+      buttons.append(pick);
       const controls = panel.querySelector('.pet-controls');
       const modeLabel = document.createElement('label'); modeLabel.textContent = tr('표시 위치');
       const mode = document.createElement('select'); mode.dataset.petKey = 'Desktop';
@@ -183,7 +269,18 @@
       updatePanel();
     },
     async handle(m) {
-      if (m.t === 'pet.decode') {
+      if (m.t === 'pet.library') {
+        libraryItems = m.items || []; settings.Items = libraryItems; settings.SelectedId = m.selectedId || '';
+        const files = new Set(libraryItems.map(item => item.FileName));
+        for (const file of thumbnails.keys()) if (!files.has(file)) thumbnails.delete(file);
+        paintLibrary();
+      } else if (m.t === 'pet.thumbnail') {
+        const item = libraryItems.find(item => item.Id === m.itemId && item.FileName === m.file);
+        if (!item) return;
+        thumbnails.set(m.file, { data: m.data, error: m.error });
+        const row = library?.querySelector('[data-pet-list]') && [...library.querySelectorAll('li')].find(row => row.dataset.petId === item.Id);
+        if (row) paintThumbnail(row, item);
+      } else if (m.t === 'pet.decode') {
         try { const png = await normalize(from64(m.data), m.mime); send({ t: 'pet.commit', id: m.id, data: to64(png) }); }
         catch (e) { busy = false; report(tr(e.message)); send({ t: 'pet.reject', id: m.id, error: tr(e.message) }); }
       } else if (m.t === 'pet.preview') {

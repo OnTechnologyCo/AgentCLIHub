@@ -5,8 +5,17 @@ using System.Windows.Media.Imaging;
 
 namespace AgentCLIHub;
 
+public sealed class PetEntry
+{
+    public string Id { get; set; } = "";
+    public string Name { get; set; } = "";
+    public string FileName { get; set; } = "";
+}
+
 public sealed class PetSettings
 {
+    public List<PetEntry> Items { get; set; } = [];
+    public string SelectedId { get; set; } = "";
     public bool Enabled { get; set; }
     public string FileName { get; set; } = "";
     public string Name { get; set; } = "";
@@ -26,6 +35,57 @@ public sealed class PetSettings
         Y = double.IsFinite(Y) ? Math.Clamp(Y, 0, 1) : 1;
         DesktopX = DesktopX is { } x && double.IsFinite(x) ? Math.Clamp(x, -1000000, 1000000) : null;
         DesktopY = DesktopY is { } y && double.IsFinite(y) ? Math.Clamp(y, -1000000, 1000000) : null;
+        Items = (Items ?? []).Where(p => p is not null && PetSheet.IsStoredFile(p.FileName))
+            .DistinctBy(p => p.FileName).ToList();
+        foreach (var item in Items)
+        {
+            if (!Guid.TryParseExact(item.Id, "N", out _) || Items.Any(p => p != item && p.Id == item.Id))
+                item.Id = item.FileName[..32];
+            item.Name ??= "";
+        }
+        // Preserve the single pet saved by versions before the library existed.
+        if (PetSheet.IsStoredFile(FileName) && Items.All(p => p.FileName != FileName))
+            Items.Add(new PetEntry { Id = FileName[..32], FileName = FileName, Name = Name ?? "" });
+        var selected = Items.FirstOrDefault(p => p.Id == SelectedId) ?? Items.FirstOrDefault(p => p.FileName == FileName);
+        SelectedId = selected?.Id ?? ""; FileName = selected?.FileName ?? ""; Name = selected?.Name ?? "";
+        if (selected is null) Enabled = false;
+    }
+
+    public PetEntry Find(string id) => Items.FirstOrDefault(p => p.Id == id)
+        ?? throw new ArgumentException("펫을 찾을 수 없습니다 / pet no longer exists.");
+
+    public PetEntry AddOrUpdate(string fileName, string name, string? replaceId = null)
+    {
+        if (!PetSheet.IsStoredFile(fileName)) throw new ArgumentException("Invalid stored pet filename.");
+        Normalize();
+        if (Items.Any(p => p.FileName == fileName)) throw new ArgumentException("Pet image already exists.");
+        if (replaceId is not null)
+        {
+            var item = Find(replaceId); item.FileName = fileName;
+            if (item.Id == SelectedId) { FileName = fileName; Name = item.Name; }
+            return item;
+        }
+        var added = new PetEntry { Id = Guid.NewGuid().ToString("N"), FileName = fileName, Name = name };
+        Items.Add(added); Select(added.Id); return added;
+    }
+
+    public void Select(string id)
+    {
+        var item = Find(id);
+        SelectedId = item.Id; FileName = item.FileName; Name = item.Name; Enabled = true;
+    }
+
+    public PetEntry Remove(string id)
+    {
+        var item = Find(id); Items.Remove(item);
+        if (SelectedId == id)
+        {
+            var enabled = Enabled;
+            SelectedId = FileName = Name = "";
+            if (Items.Count > 0) Select(Items[0].Id);
+            Enabled = enabled && Items.Count > 0;
+        }
+        return item;
     }
 
     public void SetOption(string key, string value)
@@ -44,7 +104,9 @@ public sealed class PetSettings
                 Size = size; break;
             case "name":
                 if (value.Length is 0 or > 120 || value.Any(char.IsControl)) throw new ArgumentException("Pet name must be 1–120 characters without control characters.");
-                Name = value; break;
+                Name = value;
+                if (Items.FirstOrDefault(p => p.Id == SelectedId) is { } selected) selected.Name = value;
+                break;
             default: throw new ArgumentException("Unknown pet option: location, size, visible, cursor, animation, name.");
         }
     }
@@ -107,10 +169,16 @@ public static class PetSheet
     public static int Direction(double dx, double dy) =>
         ((int)Math.Round(Math.Atan2(dx, -dy) * 8 / Math.PI, MidpointRounding.AwayFromZero) % 16 + 16) % 16;
 
-    public static string? StoredPath(PetSettings options)
+    public static bool IsStoredFile(string? name) => name is { Length: 36 } && name.EndsWith(".png", StringComparison.Ordinal) &&
+        Guid.TryParseExact(name[..32], "N", out _);
+
+    public static string? StoredPath(string? name) => IsStoredFile(name) ? Path.Combine(Settings.DataDir, "pets", name!) : null;
+    public static string? StoredPath(PetSettings options) => StoredPath(options.FileName);
+
+    public static byte[] Thumbnail(BitmapSource sheet)
     {
-        var name = options.FileName ?? "";
-        return name.Length == 36 && name.EndsWith(".png", StringComparison.Ordinal) &&
-            Guid.TryParseExact(name[..32], "N", out _) ? Path.Combine(Settings.DataDir, "pets", name) : null;
+        var thumbnail = new TransformedBitmap(Frame(sheet, 0, 0), new ScaleTransform(.5, .5));
+        var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(thumbnail));
+        using var output = new MemoryStream(); encoder.Save(output); return output.ToArray();
     }
 }

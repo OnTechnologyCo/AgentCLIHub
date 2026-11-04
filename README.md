@@ -600,11 +600,16 @@ Codex는 `-p agentclihub`와 `agentclihub.config.toml`을 사용하며, 처음 �
 
 
 
-## 펫 (1.9.1)
+## 펫 (1.9.2)
 
 설정 → **펫**에서 투명 PNG/WebP 스프라이트 시트를 등록한다. 파일은 최대 20 MiB,
 정확히 1536×2288픽셀, 192×208 셀의 8열×11행이어야 한다. 애니메이션 PNG/WebP는 받지 않는다.
 이미지는 검사 후 사용자 데이터 폴더의 `pets/`에 정지 PNG로 보관한다. 원본을 옮겨도 유지된다.
+
+**이미지 등록 / 목록**은 썸네일 목록 팝업을 연다. **이미지 추가**는 기존 펫을 보관한 채 새 펫을 추가·선택한다.
+각 항목에서 **사용하기**, **이미지 교체**, **삭제**를 할 수 있다. 교체는 해당 항목의 이름·ID와 현재 선택을 유지하며,
+삭제는 확인 후 해당 사본만 지운다. 사용 중인 펫을 삭제하면 남은 첫 항목으로 전환하고 마지막 항목을 삭제하면 숨긴다.
+목록과 선택은 재시작 후에도 유지된다. 이전 버전에서 사용하던 펫은 자동으로 목록에 포함된다.
 
 | 행 (1부터) | 동작 | 프레임 수 |
 | --- | --- | ---: |
@@ -636,7 +641,9 @@ Codex는 `-p agentclihub`와 `agentclihub.config.toml`을 사용하며, 처음 �
 
 Codex·Claude 새 대화에는 제작 규격과 등록 명령을 내부 지침으로 제공한다. 대화 시작 안내나 자동 팝업은 없다.
 에이전트는 `& $env:AGENTCLIHUB_BROWSER_CLI pet status`로 구조를 확인하고, `pet export <새 PNG 절대경로>`로 편집 사본을 얻은 뒤
-`pet import <PNG/WebP 절대경로>`로 직접 만든 시트를 검사·등록할 수 있다. `pet set location desktop|app`, `pet set size 100`,
+`pet import <PNG/WebP 절대경로>`로 직접 만든 시트를 검사·추가할 수 있다. `pet list`의 ID로 `pet select <id>`,
+`pet update <id> <PNG/WebP 절대경로>`, `pet remove <id>`를 사용한다. `pet export <새 PNG 절대경로> [id]`로 특정 펫을 내보낼 수 있다.
+`pet set location desktop|app`, `pet set size 100`,
 `pet set visible on|off`도 지원한다. 이미지 제작은 해당 에이전트가 가진 도구를 사용하며 앱 자체에 이미지 생성 모델은 포함하지 않는다.
 
 검사: `dotnet run --project tests/PetChecks/PetChecks.csproj -- --ui`, `--web` 및 `node tests/pet_format_checks.cjs`.
