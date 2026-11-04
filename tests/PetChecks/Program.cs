@@ -32,11 +32,12 @@ internal static class Program
             var image = BitmapSource.Create(1536, 2288, 96, 96, PixelFormats.Bgra32, null, pixels, 1536 * 4);
             var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(image));
             using var stream = new MemoryStream(); encoder.Save(stream); var png = stream.ToArray();
-            var decoded = PetSheet.Decode(png);
+            // Match registration: decode on a worker, then crop/encode and render on the UI thread.
+            var decoded = Task.Run(() => PetSheet.Decode(png)).GetAwaiter().GetResult();
             Check(decoded.IsFrozen, "decoded bitmap frozen for UI use");
             using var thumbStream = new MemoryStream(PetSheet.Thumbnail(decoded));
             var thumb = new PngBitmapDecoder(thumbStream, BitmapCreateOptions.None, BitmapCacheOption.OnLoad).Frames[0];
-            Check(thumb.PixelWidth == 96 && thumb.PixelHeight == 104, "compact first-frame thumbnail");
+            Check(thumb.PixelWidth == 96 && thumb.PixelHeight == 104, "worker-decoded image produces compact first-frame thumbnail on UI thread");
             var legacyFile = Guid.NewGuid().ToString("N") + ".png";
             var library = JsonSerializer.Deserialize<PetSettings>(JsonSerializer.Serialize(new { FileName = legacyFile, Name = "기존 펫", Enabled = true, Size = 125, Desktop = true }))!;
             library.Normalize(); library.Normalize();
