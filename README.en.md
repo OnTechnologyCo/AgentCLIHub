@@ -355,3 +355,39 @@ or finishing the task, then verifying cleanup with `tabs`. Existing user tabs an
 requested to stay open are preserved. The `open` response includes the tab's `closeCommand`.
 Fixed `close` removing the native browser while leaving its tab visible in the UI.
 Update with `AgentCLIHub-Setup-1.8.3.0.exe` and restart the app to apply the guidance to CLI launches.
+
+
+
+## Pet (1.9.0)
+
+Open **Settings → Pet** to import a transparent PNG/WebP sprite sheet, up to 20 MiB,
+exactly 1536×2288 pixels: 8 columns and 11 rows of 192×208 cells. Animated PNG/WebP files are rejected.
+A validated static PNG copy is stored in the current user's data directory under `pets/`, so moving the original does not break the pet.
+
+| Row (1-based) | State | Frames |
+| --- | --- | ---: |
+| 1 | Idle | 6 |
+| 2 | Move right | 8 |
+| 3 | Move left | 8 |
+| 4 | Wave | 4 |
+| 5 | Jump | 5 |
+| 6 | Failure | 8 |
+| 7 | Waiting | 6 |
+| 8 | Working | 6 |
+| 9 | Review | 6 |
+| 10–11 | Sixteen look directions | 8 + 8 |
+
+Directions start at 0° (up), advancing clockwise in 22.5° steps through 337.5°.
+Required frames start at the left of each row: all 73 must contain a character and transparent background.
+All 15 unused cells must be fully transparent. Artistic pose semantics are not automatically validated.
+Settings preview every action and direction. Animation advances every 120 ms.
+
+- Visibility, size (50–150%), cursor tracking, and animation save and apply immediately. Hidden by default; enabled on import.
+- Click to wave, double-click to jump, drag to move with directional animation. Position persists and can be reset.
+- Right-click for all nine actions. With keyboard focus on the pet, Enter waves, Space jumps, and arrow keys move it.
+- The transparent owned window appears over CLI, browser, and settings tabs and follows the app's minimize/close lifecycle.
+- Active CLI input/output triggers working, process ready triggers waiting, normal process exit triggers review, and errors/nonzero exit trigger failure.
+  Activity falls back to idle after three seconds without an update (four for exit/failure). This is not a detector of actual LLM task completion or approval prompts.
+- Invalid imports preserve the current pet. Removing a pet deletes only the app's copy.
+
+Checks: `dotnet run --project tests/PetChecks/PetChecks.csproj` and `node tests/pet_format_checks.cjs`.

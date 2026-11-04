@@ -130,6 +130,7 @@ public partial class MainWindow : Window
         e.Cancel = true;
         if (_closingStarted) return;
         _closingStarted = true;
+        _petWindow?.Close(); _petWindow = null;
 
         try
         {
@@ -200,7 +201,13 @@ public partial class MainWindow : Window
         {
             try
             {
-                if (JsonNode.Parse(ev.WebMessageAsJson) is { } node) OnMessage(node);
+                if (JsonNode.Parse(ev.WebMessageAsJson) is { } node)
+                {
+                    if (node["t"]?.GetValue<string>()?.StartsWith("pet.", StringComparison.Ordinal) == true &&
+                        (!Uri.TryCreate(ev.Source, UriKind.Absolute, out var source) ||
+                         source.Scheme != "https" || source.Host != Host || source.AbsolutePath != "/index.html")) return;
+                    OnMessage(node);
+                }
             }
             catch { /* 못 읽을 메시지는 무시한다 — 화면 쪽 버그로 호스트가 죽으면 안 된다 */ }
         };
@@ -217,6 +224,7 @@ public partial class MainWindow : Window
     private void OnMessage(JsonNode m)
     {
         var t = m["t"]?.GetValue<string>() ?? "";
+        if (t.StartsWith("pet.", StringComparison.Ordinal)) { HandlePetMessage(m); return; }
 
         // 터미널 메시지는 **탭 번호로 갈라 보낸다.** 가장 자주 오고(키 입력마다 온다).
         // 모르는 번호면 아무 탭에나 흘리지 않는다 — 그러면 화면이 뒤섞인다.
@@ -246,6 +254,7 @@ public partial class MainWindow : Window
         {
             case "ui.ready":
                 PostConf();
+                ApplyPet();
 
                 // **두 번 올 수 있다.** 껍데기가 다시 뜨면(새로고침·복구) 그대로 또 온다.
                 // 그때 RestoreTabs 를 다시 돌리면 설정에 적힌 탭이 **한 벌 더** 생긴다 —
@@ -296,6 +305,7 @@ public partial class MainWindow : Window
                 var languageSettings = Settings.Load();
                 languageSettings.UiLanguage = m["language"]?.GetValue<string>() ?? "ko";
                 languageSettings.Save();
+                ApplyPet();
                 Post(new { t = "ui.language", language = languageSettings.UiLanguage });
                 break;
 
@@ -1436,6 +1446,7 @@ public partial class MainWindow : Window
             settings = new
             {
                 // 어느 CLI 로 열지는 여기 없다 — [＋ 새 대화] 를 누를 때마다 고른다(PostNewChat).
+                Pet = c.Pet ?? new PetSettings(),
                 c.UiLanguage, c.ClaudeModel, c.ClaudeEffort, c.CodexModel, c.CodexEffort,
                 c.ClaudeCodePermissionMode, c.CodexSandbox, c.CodexApproval,
                 c.ClaudeCliPath, c.CodexCliPath, c.AntigravityCliPath, c.AntigravityPermission,
@@ -1546,6 +1557,7 @@ public partial class MainWindow : Window
 
         // 새 값을 바로 건다. **쿠키는 안 되돌린다** — 위 주석 참조.
         ApplySignInSettings(c);
+        ApplyPet();
 
         Log("설정을 저장했습니다. **다음에 여는 대화부터** 적용됩니다 — 이미 떠 있는 탭은 " +
             "그 인자로 실행 중이라 바꿀 수 없습니다.", "i");

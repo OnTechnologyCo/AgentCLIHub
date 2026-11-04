@@ -104,6 +104,7 @@ public sealed class Bookmark
 /// </summary>
 public sealed class Settings
 {
+    public PetSettings Pet { get; set; } = new();
     public Dictionary<string, string> DefaultAccountNames { get; set; } = [];
     private string _uiLanguage = "ko";
     public string UiLanguage
