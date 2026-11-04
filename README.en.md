@@ -358,11 +358,16 @@ Update with `AgentCLIHub-Setup-1.8.3.0.exe` and restart the app to apply the gui
 
 
 
-## Pet (1.9.1)
+## Pet (1.9.2)
 
 Open **Settings → Pet** to import a transparent PNG/WebP sprite sheet, up to 20 MiB,
 exactly 1536×2288 pixels: 8 columns and 11 rows of 192×208 cells. Animated PNG/WebP files are rejected.
 A validated static PNG copy is stored in the current user's data directory under `pets/`, so moving the original does not break the pet.
+
+**Import / pet library** opens a thumbnail list. **Add image** adds and selects a new pet while keeping existing pets.
+Each entry has **Use pet**, **Replace image**, and **Delete** actions. Replacement preserves its ID, name and the current selection.
+Deletion asks for confirmation and removes only that entry's copy. Deleting the active pet selects the first remaining entry;
+deleting the last one hides the pet. The library and selection survive restarts, and the existing pet migrates automatically.
 
 | Row (1-based) | State | Frames |
 | --- | --- | ---: |
@@ -394,7 +399,9 @@ Settings preview every action and direction. Animation advances every 120 ms.
 
 New Codex/Claude sessions receive sprite construction rules and registration commands as internal instructions, without a startup announcement or popup.
 Agents can run `& $env:AGENTCLIHUB_BROWSER_CLI pet status`, export an editable copy with `pet export <new absolute PNG path>`,
-then validate and register their creation with `pet import <absolute PNG/WebP path>`. Other commands include `pet set location desktop|app`,
+then validate and add their creation with `pet import <absolute PNG/WebP path>`. Use IDs from `pet list` for `pet select <id>`,
+`pet update <id> <absolute PNG/WebP path>` and `pet remove <id>`. `pet export <new absolute PNG path> [id]` exports a specific pet.
+Other commands include `pet set location desktop|app`,
 `pet set size 100`, and `pet set visible on|off`. Image creation uses the agent's available tools; no image generation model is bundled.
 
 Checks: `dotnet run --project tests/PetChecks/PetChecks.csproj -- --ui`, `--web` and `node tests/pet_format_checks.cjs`.

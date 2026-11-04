@@ -34,6 +34,40 @@ internal static class Program
             using var stream = new MemoryStream(); encoder.Save(stream); var png = stream.ToArray();
             var decoded = PetSheet.Decode(png);
             Check(decoded.IsFrozen, "decoded bitmap frozen for UI use");
+            using var thumbStream = new MemoryStream(PetSheet.Thumbnail(decoded));
+            var thumb = new PngBitmapDecoder(thumbStream, BitmapCreateOptions.None, BitmapCacheOption.OnLoad).Frames[0];
+            Check(thumb.PixelWidth == 96 && thumb.PixelHeight == 104, "compact first-frame thumbnail");
+            var legacyFile = Guid.NewGuid().ToString("N") + ".png";
+            var library = JsonSerializer.Deserialize<PetSettings>(JsonSerializer.Serialize(new { FileName = legacyFile, Name = "기존 펫", Enabled = true, Size = 125, Desktop = true }))!;
+            library.Normalize(); library.Normalize();
+            Check(library.Items.Count == 1 && library.Find(library.SelectedId).FileName == legacyFile && library.Enabled && library.Desktop && library.Size == 125, "legacy migration preserves pet and preferences, is idempotent");
+            var firstId = library.SelectedId;
+            var added = library.AddOrUpdate(Guid.NewGuid().ToString("N") + ".png", "두 번째 펫");
+            Check(library.Items.Count == 2 && library.SelectedId == added.Id && library.Find(firstId).FileName == legacyFile, "adding preserves old entry and selects new");
+            var selectedFile = library.FileName;
+            var replacement = Guid.NewGuid().ToString("N") + ".png";
+            library.AddOrUpdate(replacement, "replacement.png", firstId);
+            Check(library.Items.Count == 2 && library.Find(firstId).Name == "기존 펫" && library.Find(firstId).FileName == replacement && library.FileName == selectedFile, "replace inactive pet preserves identity/name/selection");
+            library.Select(firstId); library.SetOption("name", "수정 펫");
+            Check(library.FileName == replacement && library.Enabled && library.Find(firstId).Name == "수정 펫", "select and rename stored entry");
+            var activeReplacement = Guid.NewGuid().ToString("N") + ".png";
+            library.AddOrUpdate(activeReplacement, "ignored.png", firstId); library.Normalize();
+            Check(library.Items.Count == 2 && library.FileName == activeReplacement && library.SelectedId == firstId, "replace active pet does not resurrect old file during normalization");
+            library = JsonSerializer.Deserialize<PetSettings>(JsonSerializer.Serialize(library))!; library.Normalize();
+            Check(library.Items.Count == 2 && library.SelectedId == firstId && library.Name == "수정 펫", "collection and selection survive settings round trip");
+            var beforeBad = JsonSerializer.Serialize(library);
+            foreach (var action in new Action[] { () => library.Select("missing"), () => library.Remove("missing"), () => library.AddOrUpdate(Guid.NewGuid().ToString("N") + ".png", "x", "missing"), () => library.AddOrUpdate("../outside.png", "x") })
+            {
+                try { action(); throw new Exception("Invalid library mutation accepted"); }
+                catch (ArgumentException) { Check(JsonSerializer.Serialize(library) == beforeBad, "invalid library target leaves collection unchanged"); }
+            }
+            library.Remove(added.Id); library.Normalize();
+            Check(library.Items.Count == 1 && library.SelectedId == firstId, "delete inactive only");
+            var last = library.AddOrUpdate(Guid.NewGuid().ToString("N") + ".png", "last");
+            library.Remove(last.Id); library.Normalize();
+            Check(library.SelectedId == firstId && library.Enabled, "delete selected falls back to remaining pet");
+            library.Remove(firstId); library.Normalize();
+            Check(library.Items.Count == 0 && library.FileName == "" && library.SelectedId == "" && !library.Enabled, "delete last remains empty after normalization");
             for (var row = 0; row < 11; row++) for (var col = 0; col < PetSheet.Counts[row]; col++)
             {
                 var frame = PetSheet.Frame(decoded, row, col); var pixel = new byte[4];

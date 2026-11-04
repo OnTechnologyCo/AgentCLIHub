@@ -10,8 +10,11 @@ public partial class MainWindow
     private string? _petFile;
     private string? _petImport;
     private string _petImportName = "";
+    private string? _petImportReplaceId;
     private bool _petCommitting;
     private TaskCompletionSource<PetSettings>? _petImportCompletion;
+    private readonly Dictionary<string, string> _petThumbnails = new();
+    private int _petLibraryRequest;
 
     private void ApplyPet()
     {
@@ -64,13 +67,19 @@ public partial class MainWindow
         {
             switch (message["t"]?.GetValue<string>())
             {
+                case "pet.list":
+                    await PostPetLibrary(); break;
+                case "pet.list.close":
+                    _petLibraryRequest++; break;
+                case "pet.select":
+                    SelectPet(message["itemId"]?.GetValue<string>() ?? ""); break;
                 case "pet.pick":
                 {
                     if (_petImport is not null || _petCommitting) return;
                     var path = Dialogs.PickFile(this, UiText.Pick("펫 스프라이트 이미지", "Pet sprite sheet"),
                         "PNG / WebP (*.png;*.webp)|*.png;*.webp");
                     if (path is null) { Post(new { t = "pet.cancel" }); return; }
-                    await ImportPetAsync(path);
+                    await ImportPetAsync(path, message["itemId"]?.GetValue<string>());
                     break;
                 }
                 case "pet.commit":
@@ -82,18 +91,20 @@ public partial class MainWindow
                     var data = message["data"]?.GetValue<string>() ?? "";
                     if (data.Length > (PetSheet.MaxBytes + 2) / 3 * 4) throw new InvalidDataException("Image exceeds 20 MiB.");
                     var png = Convert.FromBase64String(data);
-                    await System.Threading.Tasks.Task.Run(() => PetSheet.Decode(png));
+                    var bitmap = await System.Threading.Tasks.Task.Run(() => PetSheet.Decode(png));
+                    var thumbnail = Convert.ToBase64String(PetSheet.Thumbnail(bitmap));
                     // A timed-out or closed request must never commit later.
                     if (_closingStarted || _petImport != importId) return;
                     var c = Settings.Load(); c.Pet ??= new();
-                    var oldPath = PetSheet.StoredPath(c.Pet);
-                    c.Pet.FileName = Guid.NewGuid().ToString("N") + ".png";
-                    c.Pet.Name = importName; c.Pet.Enabled = true;
-                    var path = PetSheet.StoredPath(c.Pet)!;
+                    var oldFile = _petImportReplaceId is { } replaceId ? c.Pet.Find(replaceId).FileName : null;
+                    var fileName = Guid.NewGuid().ToString("N") + ".png";
+                    c.Pet.AddOrUpdate(fileName, importName, _petImportReplaceId);
+                    var path = PetSheet.StoredPath(fileName)!;
                     Directory.CreateDirectory(Path.GetDirectoryName(path)!);
                     try { File.WriteAllBytes(path, png); PersistPet(c); }
                     catch { File.Delete(path); throw; }
-                    if (oldPath is not null && oldPath != path) { try { File.Delete(oldPath); } catch { } }
+                    _petThumbnails[fileName] = thumbnail;
+                    if (oldFile is not null) DeletePetImage(oldFile);
                     ApplyPet(); PostPet();
                     _petImportCompletion?.TrySetResult(c.Pet);
                     break;
@@ -127,14 +138,8 @@ public partial class MainWindow
                     break;
                 }
                 case "pet.remove":
-                {
-                    if (_petImport is not null) throw new InvalidOperationException("Pet import is still running.");
-                    var c = Settings.Load(); c.Pet ??= new();
-                    var oldPath = PetSheet.StoredPath(c.Pet);
-                    c.Pet = new PetSettings(); PersistPet(c); ApplyPet(); PostPet();
-                    if (oldPath is not null) { try { File.Delete(oldPath); } catch { } }
+                    RemovePet(message["itemId"]?.GetValue<string>() ?? "");
                     break;
-                }
                 case "pet.play":
                     _petWindow?.Play(message["state"]?.GetValue<string>() ?? "idle");
                     break;
@@ -151,15 +156,16 @@ public partial class MainWindow
         }
     }
 
-    private async Task<PetSettings> ImportPetAsync(string path)
+    private async Task<PetSettings> ImportPetAsync(string path, string? replaceId = null)
     {
         if (_petImport is not null) throw new InvalidOperationException("Pet import is still running.");
         if (_closingStarted || View.CoreWebView2 is null) throw new InvalidOperationException("Pet importer is not ready.");
         var ext = Path.GetExtension(path).ToLowerInvariant();
         if (ext is not (".png" or ".webp")) throw new InvalidDataException("PNG / WebP only.");
+        if (replaceId is not null) Settings.Load().Pet.Find(replaceId);
         var id = Guid.NewGuid().ToString("N");
         var completion = new TaskCompletionSource<PetSettings>(TaskCreationOptions.RunContinuationsAsynchronously);
-        _petImport = id; _petImportName = Path.GetFileName(path); _petImportCompletion = completion;
+        _petImport = id; _petImportName = Path.GetFileName(path); _petImportCompletion = completion; _petImportReplaceId = replaceId;
         try
         {
             var bytes = await System.Threading.Tasks.Task.Run(() => ReadPetBytes(path)).WaitAsync(TimeSpan.FromSeconds(5));
@@ -172,9 +178,60 @@ public partial class MainWindow
         {
             if (_petImportCompletion == completion)
             {
-                _petImport = null; _petCommitting = false; _petImportCompletion = null;
+                _petImport = null; _petCommitting = false; _petImportCompletion = null; _petImportReplaceId = null;
             }
         }
+    }
+
+    private async Task PostPetLibrary()
+    {
+        var request = ++_petLibraryRequest;
+        var options = Settings.Load().Pet;
+        Post(new { t = "pet.library", items = options.Items, selectedId = options.SelectedId });
+        var files = options.Items.Select(p => p.FileName).ToHashSet();
+        foreach (var old in _petThumbnails.Keys.Where(f => !files.Contains(f)).ToArray()) _petThumbnails.Remove(old);
+        foreach (var item in options.Items)
+        {
+            if (_closingStarted || request != _petLibraryRequest) return;
+            try
+            {
+                if (!_petThumbnails.TryGetValue(item.FileName, out var data))
+                {
+                    data = await Task.Run(() => Convert.ToBase64String(PetSheet.Thumbnail(PetSheet.Decode(ReadPetBytes(PetSheet.StoredPath(item.FileName)!)))));
+                    if (_closingStarted || request != _petLibraryRequest) return;
+                    _petThumbnails[item.FileName] = data;
+                }
+                Post(new { t = "pet.thumbnail", itemId = item.Id, file = item.FileName, data });
+            }
+            catch
+            {
+                if (request == _petLibraryRequest)
+                    Post(new { t = "pet.thumbnail", itemId = item.Id, file = item.FileName, error = true });
+            }
+        }
+    }
+
+    private void SelectPet(string id)
+    {
+        if (_petImport is not null) throw new InvalidOperationException("Pet import is still running.");
+        var c = Settings.Load();
+        var item = c.Pet.Find(id);
+        PetSheet.Decode(ReadPetBytes(PetSheet.StoredPath(item.FileName)!));
+        c.Pet.Select(id); PersistPet(c); ApplyPet(); PostPet();
+    }
+
+    private void RemovePet(string id)
+    {
+        if (_petImport is not null) throw new InvalidOperationException("Pet import is still running.");
+        var c = Settings.Load();
+        var removed = c.Pet.Remove(id);
+        PersistPet(c); ApplyPet(); PostPet(); DeletePetImage(removed.FileName);
+    }
+
+    private void DeletePetImage(string file)
+    {
+        _petThumbnails.Remove(file);
+        if (PetSheet.StoredPath(file) is { } path) { try { File.Delete(path); } catch { } }
     }
 
     private object PetStatus()
@@ -194,15 +251,31 @@ public partial class MainWindow
         switch (command)
         {
             case "status": return PetStatus();
+            case "list":
+            {
+                var options = Settings.Load().Pet;
+                return new { items = options.Items, selectedId = options.SelectedId };
+            }
             case "import":
                 if (args.Length != 2 || !Path.IsPathFullyQualified(Arg(1))) throw new ArgumentException("pet import <absolute PNG/WebP path>");
                 await ImportPetAsync(Arg(1));
                 return PetStatus();
+            case "update":
+                if (args.Length != 3 || !Path.IsPathFullyQualified(Arg(2))) throw new ArgumentException("pet update <id> <absolute PNG/WebP path>");
+                await ImportPetAsync(Arg(2), Arg(1)); return PetStatus();
+            case "select":
+                if (args.Length != 2) throw new ArgumentException("pet select <id>");
+                SelectPet(Arg(1)); return PetStatus();
+            case "remove":
+                if (args.Length != 2) throw new ArgumentException("pet remove <id>");
+                RemovePet(Arg(1)); return PetStatus();
             case "export":
             {
-                if (args.Length != 2 || !Path.IsPathFullyQualified(Arg(1)) || !Arg(1).EndsWith(".png", StringComparison.OrdinalIgnoreCase))
-                    throw new ArgumentException("pet export <new absolute PNG path>");
-                var path = PetSheet.StoredPath(Settings.Load().Pet ?? new()) ?? throw new InvalidOperationException("No pet registered.");
+                if (args.Length is < 2 or > 3 || !Path.IsPathFullyQualified(Arg(1)) || !Arg(1).EndsWith(".png", StringComparison.OrdinalIgnoreCase))
+                    throw new ArgumentException("pet export <new absolute PNG path> [id]");
+                var options = Settings.Load().Pet;
+                var path = PetSheet.StoredPath(args.Length == 3 ? options.Find(Arg(2)).FileName : options.FileName)
+                    ?? throw new InvalidOperationException("No pet registered.");
                 var bytes = ReadPetBytes(path); PetSheet.Decode(bytes);
                 using var output = new FileStream(Arg(1), FileMode.CreateNew, FileAccess.Write);
                 output.Write(bytes);
@@ -226,12 +299,13 @@ public partial class MainWindow
                 if (args.Length != 2 || !PetSheet.States.Contains(Arg(1))) throw new ArgumentException("Unknown pet action. Use pet status for supported states.");
                 if (_petWindow is null) throw new InvalidOperationException("Register and show a pet first.");
                 _petWindow.Play(Arg(1)); return new { state = Arg(1) };
-            default: throw new ArgumentException("pet status | import <path> | export <new PNG path> | set <option> <value> | reset-position | play <state>");
+            default: throw new ArgumentException("pet status | list | import <path> | update <id> <path> | select <id> | remove <id> | export <new PNG path> [id] | set <option> <value> | reset-position | play <state>");
         }
     }
 
     private static void PersistPet(Settings settings)
     {
+        settings.Pet.Normalize();
         settings.Save();
         if (JsonSerializer.Serialize(Settings.Load().Pet) != JsonSerializer.Serialize(settings.Pet))
             throw new IOException("펫 설정을 저장하지 못했습니다 / could not save pet settings.");

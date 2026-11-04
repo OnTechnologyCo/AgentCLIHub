@@ -336,6 +336,7 @@ public sealed class Settings
             if (File.Exists(FilePath))
             {
                 var s = JsonSerializer.Deserialize<Settings>(File.ReadAllText(FilePath)) ?? new Settings();
+                s.Pet ??= new(); s.Pet.Normalize();
                 s.MigrateLegacySites();
                 s.MigrateSingleCli();
                 return s;
