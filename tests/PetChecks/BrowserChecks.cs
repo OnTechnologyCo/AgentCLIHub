@@ -32,10 +32,10 @@ internal static class BrowserChecks
                 var options = new PetSettings();
                 string? replaceId = null;
                 var saved = 0; var imported = 0; var selected = 0; var removed = 0; var picked = 0;
-                var thumbnail = Convert.ToBase64String(PetSheet.Thumbnail(PetSheet.Decode(png)));
+                var thumbnails = new Dictionary<string, string>();
                 void Post(object payload) => web.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(payload));
                 void Conf() => Post(new { t = "conf", settings = new { UiLanguage = "ko", Pet = options }, catalog = new { }, detect = new { }, accounts = new object[0] });
-                web.CoreWebView2.WebMessageReceived += (_, e) =>
+                web.CoreWebView2.WebMessageReceived += async (_, e) =>
                 {
                     try
                     {
@@ -46,7 +46,7 @@ internal static class BrowserChecks
                             case "conf.get": Conf(); break;
                             case "pet.list":
                                 Post(new { t = "pet.library", items = options.Items, selectedId = options.SelectedId });
-                                foreach (var item in options.Items) Post(new { t = "pet.thumbnail", itemId = item.Id, file = item.FileName, data = thumbnail });
+                                foreach (var item in options.Items) Post(new { t = "pet.thumbnail", itemId = item.Id, file = item.FileName, data = thumbnails[item.FileName] });
                                 break;
                             case "pet.test.no-picker":
                                 if (picked != 0) throw new Exception("Registration should open the library without a file picker");
@@ -55,8 +55,12 @@ internal static class BrowserChecks
                                 replaceId = m["itemId"]?.ToString(); picked++;
                                 Post(new { t = "pet.decode", id = "test", name = "fixture.png", mime = "image/png", data = Convert.ToBase64String(png) }); break;
                             case "pet.commit":
-                                PetSheet.Decode(Convert.FromBase64String(m["data"]!.ToString())); imported++;
-                                options.AddOrUpdate(Guid.NewGuid().ToString("N") + ".png", "Fixture " + imported, replaceId);
+                                var bytes = Convert.FromBase64String(m["data"]!.ToString());
+                                var bitmap = await Task.Run(() => PetSheet.Decode(bytes));
+                                var thumbnail = Convert.ToBase64String(PetSheet.Thumbnail(bitmap));
+                                imported++;
+                                var added = options.AddOrUpdate(Guid.NewGuid().ToString("N") + ".png", "Fixture " + imported, replaceId);
+                                thumbnails[added.FileName] = thumbnail;
                                 Post(new { t = "pet.settings", settings = options }); break;
                             case "pet.select":
                                 options.Select(m["itemId"]!.ToString()); selected++;
@@ -156,7 +160,7 @@ internal static class BrowserChecks
                 var output = Path.Combine(root, "artifacts", "pet-checks"); Directory.CreateDirectory(output);
                 using (var screenshot = File.Create(Path.Combine(output, "gallery.png")))
                     await web.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, screenshot);
-                Console.WriteLine("PASS: WebView2 gallery popup, multiple imports, 96x104 thumbnails, select, inactive replacement, delete/cancel, reopen, 25 previews, PNG/WebP decoder, invalid-frame rejection, settings and English UI");
+                Console.WriteLine("PASS: WebView2 worker-decode/UI-thumbnail import, immediate gallery insertion, multiple imports, 96x104 thumbnails, select, inactive replacement, delete/cancel, reopen, 25 previews, PNG/WebP decoder, invalid-frame rejection, settings and English UI");
                 result = 0;
             }
             catch (Exception ex) { Console.Error.WriteLine(ex); }

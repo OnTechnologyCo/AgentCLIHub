@@ -135,8 +135,10 @@ public static class PetSheet
         var pixels = new byte[Width * Height * 4];
         bitmap.CopyPixels(pixels, Width * 4, 0);
         ValidatePixels(pixels);
-        bitmap.Freeze();
-        return bitmap;
+        // A frozen decoder-backed bitmap still consults its decoder when a crop is frozen on another thread.
+        var detached = BitmapSource.Create(Width, Height, bitmap.DpiX, bitmap.DpiY, PixelFormats.Bgra32, null, pixels, Width * 4);
+        detached.Freeze();
+        return detached;
     }
 
     public static void ValidatePixels(byte[] bgra)

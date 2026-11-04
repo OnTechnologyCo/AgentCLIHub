@@ -220,7 +220,9 @@
       settings = { Enabled: false, Size: 75, FollowCursor: true, Animate: true, Desktop: false, ...value };
       if (settings.FileName !== loaded) { image = null; loaded = ''; }
       updatePanel();
-      if (library?.open) { pendingDelete = ''; send({ t: 'pet.list' }); }
+      if (library?.open) {
+        pendingDelete = ''; libraryItems = settings.Items || []; paintLibrary(); send({ t: 'pet.list' });
+      }
     },
     render(parent) {
       if (library?.open) library.close();
