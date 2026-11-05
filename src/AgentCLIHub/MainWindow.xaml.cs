@@ -540,7 +540,9 @@ public partial class MainWindow : Window
         var settings = Settings.Load();
         var resolved = Accounts.Resolve(settings, cli, account);
         if (resolved != account) { Log("이 대화의 계정을 찾지 못했습니다. 다른 계정으로 이어가기를 선택하세요.", "e"); return; }
-        OpenTab(cwd, backend, ResumeMode.Session(sessionId), account: resolved);
+        var entry = _historyEntries.FirstOrDefault(e => e.Backend == backend && e.Id == sessionId && e.Account == account && e.Cwd == cwd);
+        if (entry is null) { Log("지난 대화 목록을 새로 열어 대화를 선택하세요.", "w"); return; }
+        OpenTab(cwd, backend, ResumeMode.Session(sessionId, entry.TranscriptPath), account: resolved);
     }
 
     /// <summary>

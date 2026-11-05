@@ -1,5 +1,8 @@
 // App interface strings. CLI output and user content are not translated.
 window.AGENTCLIHUB_UI_EN = {
+  "대화 계정": "Conversation account",
+  "모든 계정": "All accounts",
+  "공유 기록 · 계정 미확인": "Shared history · account unknown",
   "펫": "Pet",
   "이미지 등록 / 목록": "Import / pet library",
   "내 펫 목록": "My pets",

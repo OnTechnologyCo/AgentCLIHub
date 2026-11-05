@@ -14,6 +14,13 @@ void Check(bool condition, string name)
 }
 try
 {
+    if (args.Contains("--web"))
+    {
+        var result = 1;
+        var thread = new Thread(() => result = HistoryBrowserChecks.Run());
+        thread.SetApartmentState(ApartmentState.STA); thread.Start(); thread.Join();
+        Environment.ExitCode = result; return;
+    }
     if (args.Length == 7 && args[0] == "--codex-owners")
     {
         for (var i = 3; i < 7; i += 2)
@@ -34,6 +41,7 @@ try
     }
     RestoreChecks.Run(root, Check, enforceGuard: false);
     AccountChecks.Run(root, Check);
+    HistoryChecks.Run(root, Check);
     TransferMatrixChecks.Run(root, Check);
     if (args.Length == 2 && args[0] == "--agy-smoke") await AccountChecks.NativeSmoke(root, args[1], Check);
     var main = Path.Combine(root, "default-home");

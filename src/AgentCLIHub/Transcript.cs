@@ -911,7 +911,16 @@ public static class SessionFinder
     public static SessionRef? Find(SessionEntry entry)
     {
         var cli = CliProfile.ForOrDefault(entry.Backend);
-        if (cli.Kind == CliKind.Claude) return FindClaude(entry.Id, Accounts.ClaudeHomeOf(entry.Account));
+        if (cli.Kind == CliKind.Claude)
+        {
+            if (entry.TranscriptPath is { } transcript && Guid.TryParse(entry.Id, out _) &&
+                string.Equals(Path.GetFileNameWithoutExtension(transcript), entry.Id, StringComparison.OrdinalIgnoreCase))
+            {
+                var path = HistoryPaths.PhysicalFile(transcript);
+                return File.Exists(path) ? new SessionRef(cli, entry.Id, path, File.GetLastWriteTimeUtc(path)) : null;
+            }
+            return FindClaude(entry.Id, Accounts.ClaudeHomeOf(entry.Account));
+        }
         if (cli.Kind == CliKind.Antigravity)
             return AntigravitySessions.Current(entry.Cwd, DateTime.MaxValue, entry.Id, new HashSet<string>(), AntigravityAccounts.HomeOf(entry.Account)) is { } ag && ag.Id == entry.Id ? ag : null;
         if (!Guid.TryParse(entry.Id, out _)) return null;
