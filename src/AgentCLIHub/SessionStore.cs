@@ -17,9 +17,10 @@ namespace AgentCLIHub;
 /// <param name="Account">
 /// 그 기록이 있는 계정(<see cref="AgentCLIHub.Account.Id"/>, 빈 값 = 기본 계정). codex 는 계정마다 홈이 달라
 /// 기록도 그 홈에 있다 — 이어갈 때 **그 계정으로** 띄워야 codex 가 기록을 찾는다.
-/// claude 도 연결되지 않은 계정별 projects 폴더가 있으면 그 계정을 기록한다.
+/// claude 는 계정별 입력 기록으로 공유 projects 안의 대화도 분류한다.
 /// </param>
-public sealed record SessionEntry(string Backend, string Id, string Cwd, DateTime When, string Title, string Account = "");
+public sealed record SessionEntry(string Backend, string Id, string Cwd, DateTime When, string Title, string Account = "",
+                                  string? TranscriptPath = null, bool Shared = false);
 
 /// <summary>
 /// 지난 대화 목록을 읽는다. **우리가 따로 적어 두지 않는다** — 두 CLI 가 이미
@@ -41,32 +42,24 @@ public static class SessionStore
     private const int TitleLen = 110;
 
     /// <summary>
-    /// 최근 대화. 두 CLI 를 합쳐 시각 내림차순으로 준다. codex 는 **계정 홈마다** 본다 —
-    /// 다른 계정으로 넘겨 이어간 대화는 그 계정 홈에만 있다.
+    /// CLI·계정마다 최근 max개를 읽고 시각 내림차순으로 합친다.
     /// </summary>
     public static IReadOnlyList<SessionEntry> Recent(Settings s, int max = 60)
     {
         var all = new List<SessionEntry>();
-        var claudeRoots = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        void AddClaude(string home, string account)
-        {
-            try
-            {
-                var real = HistoryPaths.ClaudeProjects(home);
-                if (claudeRoots.Add(real)) all.AddRange(Claude(home, account));
-            }
-            catch { /* 한 계정의 읽기 실패가 다른 계정의 목록을 가리지 않게 한다 */ }
-        }
-        AddClaude(CliProfile.ClaudeHome, "");
-        foreach (var a in s.Accounts.Where(a => CliProfile.For(a.Backend) == CliProfile.Claude))
-            AddClaude(Accounts.ClaudeHomeOf(a.Id), a.Id);
+        var claudeHomes = new[] { (Home: CliProfile.ClaudeHome, Account: "") }
+            .Concat(s.Accounts.Where(a => CliProfile.For(a.Backend) == CliProfile.Claude)
+                .Select(a => (Home: Accounts.ClaudeHomeOf(a.Id), Account: a.Id)));
+        all.AddRange(ClaudeAccounts(claudeHomes, s.Tabs, max));
         try { all.AddRange(Codex(CliProfile.CodexHome, "")); } catch { }
         try { all.AddRange(AntigravitySessions.Recent()); } catch { }
         foreach (var a in s.Accounts.Where(a => CliProfile.For(a.Backend) == CliProfile.Antigravity))
             try { all.AddRange(AntigravitySessions.Recent(AntigravityAccounts.HomeOf(a.Id)).Select(e => e with { Account = a.Id })); } catch { }
         foreach (var a in s.Accounts.Where(a => CliProfile.For(a.Backend) == CliProfile.Codex))
             try { all.AddRange(Codex(Accounts.CodexHomeOf(a.Id), a.Id)); } catch { }
-        return all.OrderByDescending(e => e.When).Take(max).ToList();
+        return all.GroupBy(e => (e.Backend, e.Account, e.Shared))
+            .SelectMany(g => g.OrderByDescending(e => e.When).Take(max))
+            .OrderByDescending(e => e.When).ToList();
     }
 
     // ── claude ──────────────────────────────────────────────────────────────
@@ -78,21 +71,121 @@ public static class SessionStore
     /// `D--99--Temp-X` 로 접는데, 점·공백·역슬래시가 전부 대시가 되어 되돌릴 방법이 없다.
     /// 대신 파일 안의 `cwd` 를 읽는다 — 거기에는 원본이 그대로 들어 있다.
     /// </summary>
-    public static IEnumerable<SessionEntry> Claude(string home, string account = "")
+    public static IEnumerable<SessionEntry> Claude(string home, string account = "") =>
+        ClaudeAccounts([(home, account)], [], ScanFiles);
+
+    private sealed record ClaudeActivity(string Cwd, string Title, DateTime When);
+
+    // projects can be shared, but native history.jsonl remains local to the account that used the session.
+    public static IReadOnlyList<SessionEntry> ClaudeAccounts(IEnumerable<(string Home, string Account)> homes,
+        IEnumerable<TabState> tabs, int max = 60)
     {
-        var root = HistoryPaths.ClaudeProjects(home);
-        if (!Directory.Exists(root)) yield break;
-
-        var files = new DirectoryInfo(root).EnumerateDirectories()
-            .SelectMany(d => new DirectoryInfo(HistoryPaths.PhysicalDirectory(d.FullName)).EnumerateFiles("*.jsonl", SearchOption.TopDirectoryOnly))
-            .Where(f => Guid.TryParse(Path.GetFileNameWithoutExtension(f.Name), out _))
-            .OrderByDescending(f => f.LastWriteTimeUtc)
-            .Take(ScanFiles);
-
-        foreach (var f in files)
+        var profiles = new List<(string Root, string Account, Dictionary<string, ClaudeActivity> Used)>();
+        var roots = new Dictionary<string, List<FileInfo>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (home, account) in homes)
         {
-            string head;
-            try { head = Head(f.FullName); } catch { continue; }
+            try
+            {
+                var root = HistoryPaths.ClaudeProjects(home);
+                if (!roots.ContainsKey(root)) roots[root] = ClaudeFiles(root);
+                var used = ClaudeHistory(home);
+                foreach (var tab in tabs.Where(t => t.Backend == "claude_code" && t.Account == account && Guid.TryParse(t.SessionId, out _)))
+                    used.TryAdd(tab.SessionId!, new(tab.Cwd, "", DateTime.MinValue));
+                profiles.Add((root, account, used));
+            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
+        var files = roots.SelectMany(r => r.Value).GroupBy(f => Path.GetFileNameWithoutExtension(f.Name), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(f => f.LastWriteTimeUtc).ToArray(), StringComparer.OrdinalIgnoreCase);
+        var claimed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var candidates = new List<(FileInfo File, string Account, ClaudeActivity? Activity, bool Shared)>();
+        foreach (var profile in profiles)
+            foreach (var (id, activity) in profile.Used)
+                if (files.TryGetValue(id, out var copies))
+                {
+                    var file = copies.FirstOrDefault(f => Path.GetRelativePath(profile.Root, f.FullName) is var relative &&
+                        relative != ".." && !relative.StartsWith(".." + Path.DirectorySeparatorChar) && !Path.IsPathRooted(relative)) ?? copies[0];
+                    candidates.Add((file, profile.Account, activity, false)); claimed.Add(id);
+                }
+        foreach (var (root, entries) in roots)
+        {
+            var owners = profiles.Where(p => string.Equals(p.Root, root, StringComparison.OrdinalIgnoreCase)).ToArray();
+            if (owners.Length == 0) continue;
+            foreach (var file in entries.Where(f => !claimed.Contains(Path.GetFileNameWithoutExtension(f.Name))))
+                candidates.Add((file, owners[0].Account, null, owners.Length > 1));
+        }
+        var result = new List<SessionEntry>();
+        var parsed = new Dictionary<string, SessionEntry?>(StringComparer.OrdinalIgnoreCase);
+        foreach (var group in candidates.GroupBy(c => (c.Account, c.Shared)))
+        {
+            var count = 0;
+            foreach (var candidate in group.OrderByDescending(c => c.File.LastWriteTimeUtc)
+                .DistinctBy(c => Path.GetFileNameWithoutExtension(c.File.Name), StringComparer.OrdinalIgnoreCase))
+            {
+                if (count >= max) break;
+                if (!parsed.TryGetValue(candidate.File.FullName, out var entry))
+                    parsed[candidate.File.FullName] = entry = ReadClaude(candidate.File);
+                var cwd = entry?.Cwd ?? candidate.Activity?.Cwd ?? "";
+                if (cwd.Length == 0) continue;
+                var title = entry?.Title is { Length: > 0 } text ? text : candidate.Activity?.Title ?? "";
+                result.Add(new("claude_code", Path.GetFileNameWithoutExtension(candidate.File.Name), cwd,
+                    candidate.File.LastWriteTime, Fallback(title, cwd), candidate.Account, candidate.File.FullName, candidate.Shared));
+                count++;
+            }
+        }
+        return result.OrderByDescending(e => e.When).ToList();
+    }
+
+    private static List<FileInfo> ClaudeFiles(string root)
+    {
+        var files = new List<FileInfo>();
+        if (!Directory.Exists(root)) return files;
+        foreach (var dir in Directory.EnumerateDirectories(root))
+            try
+            {
+                files.AddRange(new DirectoryInfo(HistoryPaths.PhysicalDirectory(dir)).EnumerateFiles("*.jsonl")
+                    .Where(f => Guid.TryParse(Path.GetFileNameWithoutExtension(f.Name), out _)));
+            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        return files;
+    }
+
+    private static Dictionary<string, ClaudeActivity> ClaudeHistory(string home)
+    {
+        var result = new Dictionary<string, ClaudeActivity>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            using var stream = new FileStream(Path.Combine(home, "history.jsonl"), FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            using var reader = new StreamReader(stream);
+            while (reader.ReadLine() is { } line)
+                try
+                {
+                    using var doc = JsonDocument.Parse(line);
+                    var node = doc.RootElement;
+                    var id = node.TryGetProperty("sessionId", out var sid) && sid.ValueKind == JsonValueKind.String ? sid.GetString() : null;
+                    if (!Guid.TryParse(id, out _)) continue;
+                    var cwd = node.TryGetProperty("project", out var p) && p.ValueKind == JsonValueKind.String ? p.GetString() ?? "" : "";
+                    var title = node.TryGetProperty("display", out var d) && d.ValueKind == JsonValueKind.String ? Clean(d.GetString() ?? "") : "";
+                    var when = node.TryGetProperty("timestamp", out var t) && t.TryGetInt64(out var ms)
+                        ? DateTimeOffset.FromUnixTimeMilliseconds(ms).LocalDateTime : DateTime.MinValue;
+                    if (!result.TryGetValue(id!, out var old) || when >= old.When) result[id!] = new(cwd, title, when);
+                }
+                catch (JsonException) { }
+                catch (InvalidOperationException) { }
+                catch (ArgumentOutOfRangeException) { }
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+        return result;
+    }
+
+    private static SessionEntry? ReadClaude(FileInfo f)
+    {
+        try
+        {
+            var head = Head(f.FullName);
 
             string cwd = "", title = "";
             foreach (var line in head.Split('\n'))
@@ -110,10 +203,10 @@ public static class SessionStore
                 if (cwd.Length > 0 && title.Length > 0) break;
             }
 
-            if (cwd.Length == 0) continue;   // 폴더를 모르면 이어갈 수가 없다
-            yield return new SessionEntry("claude_code", Path.GetFileNameWithoutExtension(f.Name),
-                                          cwd, f.LastWriteTime, Fallback(title, cwd), account);
+            if (cwd.Length == 0) return null;
+            return new SessionEntry("claude_code", Path.GetFileNameWithoutExtension(f.Name), cwd, f.LastWriteTime, title);
         }
+        catch { return null; }
     }
 
     // ── codex ───────────────────────────────────────────────────────────────
@@ -238,6 +331,7 @@ public static class SessionStore
         when = e.When.ToString("yyyy-MM-dd HH:mm"),
         title = e.Title,
         account = e.Account,
+        shared = e.Shared,
         accountName = Accounts.View(s, CliProfile.ForOrDefault(e.Backend), e.Account).Label,
     }).ToArray();
 }

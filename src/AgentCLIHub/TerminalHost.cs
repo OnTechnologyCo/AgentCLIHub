@@ -43,7 +43,7 @@ public sealed class TerminalHost : IDisposable
 
     /// <summary>claude 계정의 설정 폴더(<c>CLAUDE_CONFIG_DIR</c>). 기본 계정이면 기본 폴더다.</summary>
     public string ClaudeHome => Accounts.ClaudeHomeOf(Account);
-    public string ClaudeHistoryHome => Accounts.ClaudeModeOf(Account) == ClaudeMode.Token ? CliProfile.ClaudeHome : ClaudeHome;
+    public string ClaudeHistoryHome => ClaudeHome;
     public string AntigravityHome => AntigravityAccounts.HomeOf(Account);
 
     /// <summary>CLI 가 뜬 시각. 그 뒤에 쓰인 기록이 이 탭의 대화다(<see cref="SessionFinder"/>).</summary>
@@ -430,10 +430,10 @@ public sealed class TerminalHost : IDisposable
         try { System.IO.Directory.CreateDirectory(Cwd); } catch { }
 
         // 계정 폴더는 **띄울 때마다** 기본 폴더에 맞춘다 — 그 사이 기본 쪽 설정이 바뀌었을 수 있다.
-        // claude 는 폴더 로그인으로 뜰 때(또는 그 로그인을 하러 갈 때)만 — 토큰으로 뜨는 탭은 기본 폴더를 그대로 쓴다.
+        // 토큰 로그인도 계정 홈을 사용해야 history.jsonl 이 기본 계정 기록과 섞이지 않는다.
         var claudeDir = Cli.Kind == CliKind.Claude && Account.Length > 0 &&
                         (IsLogin ? _loginKind != LoginKind.ClaudeSetupToken
-                                 : Accounts.ClaudeModeOf(Account) == ClaudeMode.Login);
+                                 : Accounts.ClaudeModeOf(Account) is ClaudeMode.Login or ClaudeMode.Token);
         if (Cli.Kind == CliKind.Codex && Account.Length > 0) Accounts.PrepareCodexHome(CodexHome, _log);
         if (claudeDir) Accounts.PrepareClaudeHome(ClaudeHome, _log);
         if (Cli.Kind == CliKind.Antigravity && Account.Length > 0)
@@ -612,7 +612,7 @@ public sealed class TerminalHost : IDisposable
     /// 이 탭의 계정으로 띄우게 환경을 고친다. 기본 계정이면 손대지 않는다(CLI 가 원래 로그인으로 뜬다).
     ///
     ///   claude — 계정 폴더에 일반 로그인이 있으면 <c>CLAUDE_CONFIG_DIR</c> 을 그 폴더로(대화 기록·설정은 연결로
-    ///            같이 쓴다). 없고 토큰이 있으면 <c>CLAUDE_CODE_OAUTH_TOKEN</c> 으로(저장된 로그인보다 앞선다 — 실측).
+    ///            같이 쓴다). 토큰 로그인도 같은 계정 폴더에 입력 기록을 남기고 <c>CLAUDE_CODE_OAUTH_TOKEN</c> 으로 인증한다.
     ///            <b>둘 다 없으면 띄우지 않는다</b> — 그대로 띄우면 기본 계정으로 조용히 떨어진다.
     ///   codex  — <c>CODEX_HOME</c> 을 그 계정 홈으로. 로그인이 없으면 codex 가 화면에서 먼저 묻는다.
     /// </summary>
@@ -638,6 +638,7 @@ public sealed class TerminalHost : IDisposable
                     return true;
 
                 case ClaudeMode.Token when Accounts.ClaudeToken(Account) is { } token:
+                    env["CLAUDE_CONFIG_DIR"] = ClaudeHome;
                     env["CLAUDE_CODE_OAUTH_TOKEN"] = token;
                     return true;
 
