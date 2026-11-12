@@ -59,6 +59,10 @@ Name: "korean"; MessagesFile: "compiler:Languages\Korean.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "바탕 화면에 바로 가기 만들기"; GroupDescription: "추가 아이콘:"; Flags: unchecked
+Name: "startup"; Description: "Windows 시작 시 자동 실행"; GroupDescription: "시작 옵션:"; Flags: unchecked
+
+[Registry]
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "{#AppName}"; ValueData: """{app}\{#AppExe}"""; Tasks: startup; Flags: uninsdeletevalue
 
 [Files]
 ; .NET 설치 없이 실행 가능한 단일 파일 도우미를 설치 전 점검에 사용한다.
@@ -83,14 +87,18 @@ Type: dirifempty; Name: "{app}"
 [Code]
 const
   ProductKey = 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{7C1B4E2A-9D3F-4A56-B0E7-6F2C8A1D5E94}_is1';
+  RunKey = 'Software\Microsoft\Windows\CurrentVersion\Run';
+  StartupApprovedKey = 'Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run';
+  StartupTaskCaption = 'Windows 시작 시 자동 실행';
 var
   PreviousDir, PreviousVersion, MovedInstallDir, UninstallerBackup: String;
-  HelperReady, Prepared, InstallSucceeded: Boolean;
+  HelperReady, Prepared, InstallSucceeded, HadStartupBeforeInstall: Boolean;
 
 function GetFileAttributes(Path: String): Cardinal;
   external 'GetFileAttributesW@kernel32.dll stdcall';
 
 #include "MigrationReport.iss"
+#include "StartupTask.iss"
 
 function RunMigration(Operation: String): String;
 var
@@ -133,9 +141,27 @@ begin
   Result := RegKeyExists(HKLM32, 'SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}') or
     RegKeyExists(HKCU, 'SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}');
 end;
+function StartupCurrentlyEnabled(): Boolean;
+begin
+  Result := IsStartupEnabledIn(RunKey, StartupApprovedKey, '{#AppName}');
+end;
+
+procedure InitializeWizard();
+var
+  I: Integer;
+begin
+  if ExpandConstant('{param:TASKS|__none__}') <> '__none__' then exit;
+  for I := 0 to WizardForm.TasksList.Items.Count - 1 do
+    if WizardForm.TasksList.ItemCaption[I] = StartupTaskCaption then begin
+      WizardForm.TasksList.Checked[I] := HadStartupBeforeInstall;
+      break;
+    end;
+end;
+
 function InitializeSetup(): Boolean;
 begin
   Result := True;
+  HadStartupBeforeInstall := StartupCurrentlyEnabled();
   if IsAdminInstallMode then begin
     if not RegQueryStringValue(HKLM64, ProductKey, 'Inno Setup: App Path', PreviousDir) then
       RegQueryStringValue(HKLM32, ProductKey, 'Inno Setup: App Path', PreviousDir);
@@ -318,6 +344,14 @@ begin
     RemoveLegacyShortcut(ExpandConstant('{autoprograms}\Agent CLI Hub.lnk'));
     RemoveLegacyShortcut(ExpandConstant('{autodesktop}\Agent CLI Hub.lnk'));
     RemoveDir(ExpandConstant('{autoprograms}\Agent CLI Hub'));
+    ApplyStartupPostInstall(
+      RunKey,
+      StartupApprovedKey,
+      '{#AppName}',
+      ExpandConstant('{app}\{#AppExe}'),
+      WizardIsTaskSelected('startup'),
+      WizardSilent and (ExpandConstant('{param:TASKS|__none__}') = '__none__'),
+      HadStartupBeforeInstall);
   end;
 end;
 
@@ -361,6 +395,8 @@ end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
-  if CurUninstallStep = usPostUninstall then
+  if CurUninstallStep = usPostUninstall then begin
+    CleanupStartupOnUninstall(RunKey, StartupApprovedKey, '{#AppName}');
     RemoveEmptyInstallDirectories(ExpandConstant('{app}'));
+  end;
 end;

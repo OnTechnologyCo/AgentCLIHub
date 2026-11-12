@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Windows;
 
 namespace AgentCLIHub;
@@ -18,6 +19,19 @@ public partial class App : Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        // Windows 시작프로그램(HKCU\...\Run)으로 뜰 때는 작업 폴더가 System32 로 잡힐 수 있다.
+        try
+        {
+            var sys = Path.TrimEndingDirectorySeparator(Environment.SystemDirectory);
+            var cur = Path.TrimEndingDirectorySeparator(Environment.CurrentDirectory);
+            if (string.Equals(cur, sys, StringComparison.OrdinalIgnoreCase))
+            {
+                var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+                if (Directory.Exists(home)) Environment.CurrentDirectory = home;
+            }
+        }
+        catch { }
+
         try
         {
             UpgradeMigration.RunForCurrentUser("migrate", requireClosed: false);
@@ -30,6 +44,7 @@ public partial class App : Application
             Shutdown(1);
             return;
         }
+        try { StartupRegistration.SyncExecutableIfEnabled(); } catch { }
         try { _running = new System.Threading.Mutex(false, "AgentCLIHub.Running"); } catch { }
         base.OnStartup(e);
         MainWindow = new MainWindow();

@@ -77,6 +77,26 @@ internal static class HistoryBrowserChecks
                         applyLanguage('en');
                         assert(filter.options[0].textContent==='All accounts','English account filter');
                         assert([...document.querySelectorAll('#hlist .cli')].some(e=>e.textContent.includes('Shared history')),'unattributed history is not labeled default');
+                        applyLanguage('ko');
+                        CONF={settings:{UiLanguage:'ko'},catalog:{},detect:{claude_code:{found:true},codex_cli:{found:true},antigravity_cli:{found:true}},
+                              accounts:[{backend:'claude_code',id:'',name:'기본',loggedIn:true},
+                                        {backend:'codex_cli',id:'',name:'기본',loggedIn:true},
+                                        {backend:'antigravity_cli',id:'',name:'기본',loggedIn:false},
+                                        {backend:'antigravity_cli',id:'work',name:'회사',loggedIn:true}]};
+                        USAGE['claude_code/']=[];
+                        USAGE['codex_cli/']=[{label:'주',pct:44,reset:Math.floor(Date.now()/1000)+86400}];
+                        USAGE['antigravity_cli/']=[{label:'5h',pct:1,reset:Math.floor(Date.now()/1000)+17000},{label:'주',pct:2,reset:Math.floor(Date.now()/1000)+500000}];
+                        USAGE['antigravity_cli/work']=[];
+                        renderUsage();
+                        const usageLabels=[...document.querySelectorAll('#usage .acct .an')].map(e=>e.textContent);
+                        assert(JSON.stringify(usageLabels)===JSON.stringify(['Claude','GPT','Gemini','Gemini·회사']),'Gemini label used instead of Antigravity: '+JSON.stringify(usageLabels));
+                        assert(!document.querySelector('#usage').textContent.includes('Antigravity'),'bottom usage bar never displays Antigravity name');
+                        const geminiCell=[...document.querySelectorAll('#usage .acct')][2];
+                        assert(geminiCell.textContent.includes('5h')&&geminiCell.textContent.includes('1%')&&geminiCell.textContent.includes('주')&&geminiCell.textContent.includes('2%'),'Gemini 5h and weekly usage rendered identically');
+                        const emptyWork=[...document.querySelectorAll('#usage .acct')][3];
+                        assert(emptyWork.title.includes('사용량을 읽지 못했습니다'),'Korean fallback tooltip');
+                        applyLanguage('en');
+                        assert([...document.querySelectorAll('#usage .acct')][3].title.includes('Could not read usage'),'English fallback tooltip updates dynamically');
                         window.chrome.webview.postMessage({t:'history.test.done'});
                       } catch(e){window.chrome.webview.postMessage({t:'history.test.done',error:String(e.stack||e)})}
                     })();

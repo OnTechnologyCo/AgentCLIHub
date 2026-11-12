@@ -1,9 +1,14 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
+using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace AgentCLIHub;
@@ -216,6 +221,259 @@ public static class UsageProbe
             return list.Count > 0 ? list : null;
         }
         catch { return null; }
+    }
+
+    private static readonly ConcurrentDictionary<string, Task<IReadOnlyList<UsageWindow>?>> _antigravityInFlight =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    private static string _verifiedAntigravityPath = "";
+
+    /// <summary>
+    /// <c>agy models</c> 조회가 성공한 실행 경로를 기록한다. 기본 계정의 미로그인 상태에서
+    /// <c>agy --print /usage</c> 가 OAuth 브라우저를 띄우는 것을 막기 위해 첫 조회 전에
+    /// 로그인 여부를 확인하는데, 이미 모델 목록 조회로 확인됐다면 중복 실행을 건너뛴다.
+    /// </summary>
+    public static void MarkAntigravitySignedIn(string? cliPath)
+    {
+        if (!string.IsNullOrWhiteSpace(cliPath))
+            Volatile.Write(ref _verifiedAntigravityPath, cliPath);
+    }
+
+    /// <summary>
+    /// Antigravity(Gemini) 사용량. 공식 비대화형 읽기 전용 명령
+    /// <c>agy --print "/usage" --output-format json</c> 의 출력에서 Gemini 모델군의
+    /// 5시간·주간 한도를 읽는다(턴·토큰·대화 생성 없음).
+    /// </summary>
+    public static Task<IReadOnlyList<UsageWindow>?> AntigravityAsync(
+        CliLocator.Result cli, string? accountId = null, CancellationToken cancellationToken = default)
+    {
+        if (!cli.Found) return Task.FromResult<IReadOnlyList<UsageWindow>?>(null);
+        var id = accountId ?? "";
+        if (cancellationToken.CanBeCanceled)
+            return QueryAntigravityCoreAsync(cli, id, cancellationToken);
+
+        var key = cli.Path + "\0" + id;
+        return _antigravityInFlight.GetOrAdd(key, _ => RunSharedAsync(key, cli, id));
+
+        async Task<IReadOnlyList<UsageWindow>?> RunSharedAsync(string flightKey, CliLocator.Result target, string acct)
+        {
+            try { return await QueryAntigravityCoreAsync(target, acct, CancellationToken.None).ConfigureAwait(false); }
+            finally { _antigravityInFlight.TryRemove(flightKey, out _); }
+        }
+    }
+
+    private static async Task<IReadOnlyList<UsageWindow>?> QueryAntigravityCoreAsync(
+        CliLocator.Result cli, string accountId, CancellationToken cancellationToken)
+    {
+        var profile = "";
+        if (accountId.Length > 0)
+        {
+            profile = AntigravityAccounts.ProfileOf(accountId);
+            if (!AntigravityAccounts.State(profile).LoggedIn) return null;
+        }
+        else if (!string.Equals(Volatile.Read(ref _verifiedAntigravityPath), cli.Path, StringComparison.OrdinalIgnoreCase))
+        {
+            // 기본 계정이 로그인 전일 때 --print /usage 를 바로 부르면 agy 가 브라우저 인증을 시작한다.
+            // agy models 는 미로그인 시 브라우저를 열지 않고 즉시 종료 코드 1 로 끝나므로 먼저 확인한다.
+            var check = await AntigravityModels.ReadAsync(cli, cancellationToken).ConfigureAwait(false);
+            if (check.Error is not null || check.Models.Count == 0) return null;
+            Volatile.Write(ref _verifiedAntigravityPath, cli.Path);
+        }
+
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(20));
+        Process? process = null;
+        try
+        {
+            var args = CliLocator.SplitCommandLine(
+                cli.LaunchCommand(cli.CommandHead() + " --print \"/usage\" --output-format json --print-timeout 15s"));
+            var workDir = accountId.Length > 0 ? profile : Path.GetTempPath();
+            try { Directory.CreateDirectory(workDir); } catch { }
+            var info = new ProcessStartInfo(args[0])
+            {
+                UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = workDir,
+                RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true,
+                StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8,
+            };
+            foreach (var arg in args.Skip(1)) info.ArgumentList.Add(arg);
+            info.Environment["PATH"] = CliLocator.LaunchPath(CliProfile.Antigravity);
+            info.Environment["NO_COLOR"] = "1";
+            info.Environment.Remove("FORCE_COLOR");
+            info.Environment.Remove("BROWSER");
+            foreach (var k in info.Environment.Keys
+                .Where(k => k.StartsWith("AGENTCLIHUB_", StringComparison.OrdinalIgnoreCase) ||
+                            k.StartsWith("LLMTOOLS_", StringComparison.OrdinalIgnoreCase))
+                .ToArray())
+            {
+                info.Environment.Remove(k);
+            }
+            if (accountId.Length > 0)
+            {
+                foreach (var (k, v) in AntigravityAccounts.EnvironmentFor(profile))
+                    if (v is null) info.Environment.Remove(k); else info.Environment[k] = v;
+            }
+
+            process = Process.Start(info);
+            if (process is null) return null;
+            process.StandardInput.Close();
+
+            var output = process.StandardOutput.ReadToEndAsync(timeout.Token);
+            var errWatch = WatchAuthFailureAsync(process.StandardError, timeout);
+            await Task.WhenAll(output, errWatch, process.WaitForExitAsync(timeout.Token)).ConfigureAwait(false);
+            if (process.ExitCode != 0)
+            {
+                if (accountId.Length == 0) Volatile.Write(ref _verifiedAntigravityPath, "");
+                return null;
+            }
+            var parsed = ParseAntigravity(await output.ConfigureAwait(false));
+            if (parsed is null && accountId.Length == 0) Volatile.Write(ref _verifiedAntigravityPath, "");
+            return parsed;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch
+        {
+            if (accountId.Length == 0) Volatile.Write(ref _verifiedAntigravityPath, "");
+            return null;
+        }
+        finally
+        {
+            if (process is not null)
+            {
+                try { if (!process.HasExited) process.Kill(entireProcessTree: true); } catch { }
+                process.Dispose();
+            }
+        }
+
+        static async Task WatchAuthFailureAsync(StreamReader err, CancellationTokenSource cancel)
+        {
+            try
+            {
+                while (await err.ReadLineAsync(cancel.Token).ConfigureAwait(false) is { } line)
+                {
+                    if (line.Contains("Authentication required", StringComparison.OrdinalIgnoreCase) ||
+                        line.Contains("Please sign in", StringComparison.OrdinalIgnoreCase))
+                    {
+                        cancel.Cancel();
+                        return;
+                    }
+                }
+            }
+            catch { }
+        }
+    }
+
+    /// <summary>
+    /// <c>agy --print "/usage" --output-format json</c> 출력에서 Gemini 모델군의 한도 창을 파싱한다.
+    /// <c>remaining_fraction</c>(남은 비율 0~1)을 다른 CLI 와 같은 <b>사용한 비율(0~100%)</b>로 바꾸고,
+    /// 짧은 창(<c>5h</c>)이 앞, 긴 창(<c>주</c>)이 뒤에 오도록 정렬한다.
+    /// </summary>
+    public static IReadOnlyList<UsageWindow>? ParseAntigravity(string output)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(output)) return null;
+            var clean = Regex.Replace(output, @"\x1b\[[0-?]*[ -/]*[@-~]", "").Trim();
+            var start = clean.IndexOf('{');
+            var end = clean.LastIndexOf('}');
+            if (start < 0 || end <= start) return null;
+
+            using var doc = JsonDocument.Parse(clean[start..(end + 1)]);
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object) return null;
+
+            JsonElement groups;
+            if (root.TryGetProperty("command", out var cmd) && cmd.ValueKind == JsonValueKind.Object)
+            {
+                if (cmd.TryGetProperty("name", out var cname) && cname.ValueKind == JsonValueKind.String &&
+                    !string.Equals(cname.GetString(), "usage", StringComparison.OrdinalIgnoreCase))
+                    return null;
+                if (!cmd.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Object ||
+                    !data.TryGetProperty("groups", out groups) || groups.ValueKind != JsonValueKind.Array)
+                    return null;
+            }
+            else if (!root.TryGetProperty("groups", out groups) || groups.ValueKind != JsonValueKind.Array)
+            {
+                return null;
+            }
+
+            JsonElement? selected = null;
+            JsonElement? fallback = null;
+            foreach (var g in groups.EnumerateArray())
+            {
+                if (g.ValueKind != JsonValueKind.Object) continue;
+                if (!g.TryGetProperty("buckets", out var b) || b.ValueKind != JsonValueKind.Array || b.GetArrayLength() == 0) continue;
+                fallback ??= g;
+                var gname = g.TryGetProperty("name", out var n) && n.ValueKind == JsonValueKind.String ? n.GetString() ?? "" : "";
+                var isGemini = gname.Contains("Gemini", StringComparison.OrdinalIgnoreCase) ||
+                    b.EnumerateArray().Any(x => x.ValueKind == JsonValueKind.Object &&
+                        x.TryGetProperty("id", out var bid) && bid.ValueKind == JsonValueKind.String &&
+                        (bid.GetString() ?? "").StartsWith("gemini-", StringComparison.OrdinalIgnoreCase));
+                if (isGemini) { selected = g; break; }
+            }
+
+            var target = selected ?? fallback;
+            if (target is null || !target.Value.TryGetProperty("buckets", out var buckets)) return null;
+
+            var list = new List<UsageWindow>();
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var b in buckets.EnumerateArray())
+            {
+                if (b.ValueKind != JsonValueKind.Object) continue;
+                if (b.TryGetProperty("disabled", out var dis) && dis.ValueKind == JsonValueKind.True) continue;
+                if (!b.TryGetProperty("remaining_fraction", out var remEl) || remEl.ValueKind != JsonValueKind.Number) continue;
+
+                var rem = remEl.GetDouble();
+                if (double.IsNaN(rem) || double.IsInfinity(rem)) continue;
+                var pct = Math.Clamp((int)Math.Round((1.0 - rem) * 100.0), 0, 100);
+
+                long reset = 0;
+                if (b.TryGetProperty("reset_time", out var rt) && rt.ValueKind == JsonValueKind.String &&
+                    DateTimeOffset.TryParse(rt.GetString(), out var at))
+                    reset = at.ToUnixTimeSeconds();
+
+                var win = b.TryGetProperty("window", out var w) && w.ValueKind == JsonValueKind.String ? w.GetString() ?? "" : "";
+                var bid = b.TryGetProperty("id", out var idEl) && idEl.ValueKind == JsonValueKind.String ? idEl.GetString() ?? "" : "";
+                var bname = b.TryGetProperty("name", out var nmEl) && nmEl.ValueKind == JsonValueKind.String ? nmEl.GetString() ?? "" : "";
+                var label = AntigravityWindowLabel(win, bid, bname);
+                if (!seen.Add(label)) continue;
+
+                list.Add(new UsageWindow(label, pct, reset));
+            }
+
+            list.Sort((a, b) =>
+            {
+                var cmp = WindowOrder(a.Label).CompareTo(WindowOrder(b.Label));
+                return cmp != 0 ? cmp : a.ResetsAtUnix.CompareTo(b.ResetsAtUnix);
+            });
+            return list.Count > 0 ? list : null;
+        }
+        catch { return null; }
+
+        static string AntigravityWindowLabel(string window, string id, string name)
+        {
+            switch (window.Trim().ToLowerInvariant())
+            {
+                case "5h": return "5h";
+                case "weekly" or "7d" or "1w": return Week;
+                case "monthly" or "30d" or "1m": return Month;
+                case "daily" or "24h" or "1d": return "1일";
+            }
+            if (window.EndsWith('h') && int.TryParse(window[..^1], out var hours) && hours > 0) return Label(hours * 60);
+            if (window.EndsWith('d') && int.TryParse(window[..^1], out var days) && days > 0) return Label(days * 1440);
+            if (id.Contains("5h", StringComparison.OrdinalIgnoreCase) || name.Contains("Five Hour", StringComparison.OrdinalIgnoreCase)) return "5h";
+            if (id.Contains("week", StringComparison.OrdinalIgnoreCase) || name.Contains("Week", StringComparison.OrdinalIgnoreCase)) return Week;
+            if (id.Contains("month", StringComparison.OrdinalIgnoreCase) || name.Contains("Month", StringComparison.OrdinalIgnoreCase)) return Month;
+            return window.Length > 0 ? window : "?";
+        }
+
+        static int WindowOrder(string label) => label switch
+        {
+            "5h" => 1,
+            "1일" => 2,
+            Week => 3,
+            Month => 4,
+            _ => 5,
+        };
     }
 
     private const string Week = "주";
