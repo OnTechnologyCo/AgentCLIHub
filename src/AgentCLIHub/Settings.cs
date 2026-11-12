@@ -105,6 +105,9 @@ public sealed class Bookmark
 public sealed class Settings
 {
     public PetSettings Pet { get; set; } = new();
+
+    /// <summary>텔레그램 원격(<see cref="TelegramRemote"/>). 봇 토큰은 여기 없다 — <see cref="TelegramVault"/>.</summary>
+    public TelegramSettings Telegram { get; set; } = new();
     public Dictionary<string, string> DefaultAccountNames { get; set; } = [];
     private string _uiLanguage = "ko";
     public string UiLanguage
@@ -337,6 +340,7 @@ public sealed class Settings
             {
                 var s = JsonSerializer.Deserialize<Settings>(File.ReadAllText(FilePath)) ?? new Settings();
                 s.Pet ??= new(); s.Pet.Normalize();
+                s.Telegram ??= new(); s.Telegram.Chats ??= [];
                 s.MigrateLegacySites();
                 s.MigrateSingleCli();
                 return s;
