@@ -150,6 +150,8 @@ public partial class MainWindow : Window
         catch { /* 저장 실패가 종료를 막지 않는다 */ }
 
         // 텔레그램을 먼저 끊는다 — 탭을 닫는 동안 들어온 질문이 죽어 가는 CLI 로 가면 안 된다.
+        // 예약 작업도 같다 — 닫는 중에 새 회차가 탭을 열거나 프롬프트를 보내면 안 된다.
+        StopSchedules();
         StopTelegram();
         _bridge?.Dispose();
         foreach (var t in _tabs.Values) { try { t.Dispose(); } catch { } }
@@ -206,10 +208,11 @@ public partial class MainWindow : Window
             {
                 if (JsonNode.Parse(ev.WebMessageAsJson) is { } node)
                 {
-                    // 펫·텔레그램 설정은 **우리 화면(index.html)에서 온 것만** 받는다 — 토큰을 바꾸거나
-                    // 페어링 코드를 만드는 메시지가 다른 출처에서 들어오면 안 된다.
+                    // 펫·텔레그램·예약 작업 설정은 **우리 화면(index.html)에서 온 것만** 받는다 — 토큰을 바꾸거나
+                    // 페어링 코드를 만들거나 CLI 에 프롬프트를 예약하는 메시지가 다른 출처에서 들어오면 안 된다.
                     if (node["t"]?.GetValue<string>() is { } kind &&
-                        (kind.StartsWith("pet.", StringComparison.Ordinal) || kind.StartsWith("tg.", StringComparison.Ordinal)) &&
+                        (kind.StartsWith("pet.", StringComparison.Ordinal) || kind.StartsWith("tg.", StringComparison.Ordinal) ||
+                         kind.StartsWith("sched.", StringComparison.Ordinal)) &&
                         (!Uri.TryCreate(ev.Source, UriKind.Absolute, out var source) ||
                          source.Scheme != "https" || source.Host != Host || source.AbsolutePath != "/index.html")) return;
                     OnMessage(node);
@@ -232,6 +235,7 @@ public partial class MainWindow : Window
         var t = m["t"]?.GetValue<string>() ?? "";
         if (t.StartsWith("pet.", StringComparison.Ordinal)) { HandlePetMessage(m); return; }
         if (t.StartsWith("tg.", StringComparison.Ordinal)) { HandleTelegramMessage(m); return; }
+        if (t.StartsWith("sched.", StringComparison.Ordinal)) { HandleScheduleMessage(m); return; }
 
         // 터미널 메시지는 **탭 번호로 갈라 보낸다.** 가장 자주 오고(키 입력마다 온다).
         // 모르는 번호면 아무 탭에나 흘리지 않는다 — 그러면 화면이 뒤섞인다.
@@ -291,6 +295,7 @@ public partial class MainWindow : Window
                 StartBridge();
                 StartStallWatch();
                 StartTelegram();
+                StartSchedules();
                 break;
 
             case "signin.clear":
@@ -561,7 +566,13 @@ public partial class MainWindow : Window
     /// (xterm 이 컨테이너 크기를 재서 정한다). 여기서 짐작한 값으로 띄우면 첫 화면이
     /// 어긋난 채 그려지고, TUI 는 그 상태로 계속 그린다.
     /// </summary>
-    private void OpenTab(string cwd, string backend, ResumeMode resume, string alias = "", string account = "", string? handoffPath = null)
+    /// <param name="background">
+    /// 지금 보던 화면을 빼앗지 않는다 — 예약 작업이 연 탭이다. 1분마다 도는 작업이 그때마다 화면을 바꾸면
+    /// 사용자가 치던 글이 엉뚱한 탭으로 간다.
+    /// </param>
+    /// <returns>새 탭 번호.</returns>
+    private string OpenTab(string cwd, string backend, ResumeMode resume, string alias = "", string account = "", string? handoffPath = null,
+                           bool background = false, string? model = null, string? effort = null)
     {
         var cli = CliProfile.ForOrDefault(backend);
         var id = "t" + (++_nextTab);
@@ -569,7 +580,8 @@ public partial class MainWindow : Window
         var name = TabName(cwd);
 
         var host = new TerminalHost(id, cwd, cli, account, Post, (msg, lvl) => Log($"[{name}] {msg}", lvl))
-            { HandoffPath = handoffPath ?? resume.HandoffPath, ResumeTranscriptPath = resume.TranscriptPath, InitialResume = resume };
+            { HandoffPath = handoffPath ?? resume.HandoffPath, ResumeTranscriptPath = resume.TranscriptPath, InitialResume = resume,
+              ModelOverride = model, EffortOverride = effort };
         _tabs[id] = host;
         _order.Add(id);
 
@@ -588,8 +600,10 @@ public partial class MainWindow : Window
             alias,
             account,
             accountName = AccountLabel(cli, account),
+            background,
         });
         SaveTabs();
+        return id;
     }
 
     /// <summary>탭 배지에 붙일 계정 이름. 이름을 바꾸지 않은 기본 계정은 생략한다.</summary>
@@ -871,7 +885,7 @@ public partial class MainWindow : Window
                 var acc = tab.Account ?? "";
                 if (Accounts.Resolve(cfg, cli, acc) != acc)
                     Log($"탭이 쓰던 계정을 찾지 못했습니다. [이어하기]에서 다른 계정을 선택하세요 — {tab.Cwd}", "w");
-                OpenTab(tab.Cwd, tab.Backend, SessionCheckpoint.Restore(tab), tab.Name, acc, tab.HandoffPath);
+                OpenTab(tab.Cwd, tab.Backend, SessionCheckpoint.Restore(tab), tab.Name, acc, tab.HandoffPath, model: tab.Model, effort: tab.Effort);
             }
         }
         finally { _restoringTabs = false; }
@@ -1164,7 +1178,9 @@ public partial class MainWindow : Window
 
         var name = TabName(old.Cwd);
         var host = new TerminalHost(id, old.Cwd, target, account, Post, (msg, lvl) => Log($"[{name}] {msg}", lvl))
-            { HandoffPath = mode.HandoffPath, ResumeTranscriptPath = mode.TranscriptPath, InitialResume = mode };
+            { HandoffPath = mode.HandoffPath, ResumeTranscriptPath = mode.TranscriptPath, InitialResume = mode,
+              ModelOverride = target == old.Cli ? old.ModelOverride : null,
+              EffortOverride = target == old.Cli ? old.EffortOverride : null };
         _tabs[id] = host;
         SaveTabs();
 
@@ -1513,6 +1529,7 @@ public partial class MainWindow : Window
             file = Settings.FilePath,
             version = AppVersion,
             telegram = TelegramState(),
+            sched = ScheduleState(),
         });
         RefreshAntigravityModels(c.AntigravityCliPath);
     }

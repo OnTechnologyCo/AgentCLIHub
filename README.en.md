@@ -35,7 +35,7 @@ The top row contains New conversation, Resume, browser bookmarks, conversation t
 - **One tab = one CLI process = one folder.** Tabs can use different CLIs, labeled `CC`, `CX`, or `AG`. Status dots: green = running; red = ended; gray = starting.
 - **New conversation:** Choose **Claude Code, Codex, or Antigravity**, then a folder, to start from scratch in a **new tab**. Choose the CLI each time rather than fixing one globally. The picker shows that CLI's configured model, effort, and permissions. Missing CLIs are disabled with a reason. The last selection receives focus: Enter repeats it; ↑/↓ move, 1/2 select directly, and Esc closes. Selecting the same folder still creates a new tab; use Resume to continue.
 - **Resume (↻ 이어하기):** Shows history for all three CLIs, newest first, with the first message, time, and folder. A selection resumes in a **new tab** using `claude --resume <id>`, `codex resume <id>`, or `agy --conversation <id>`.
-- **Settings (⚙ 설정):** Interface language, **Startup (launch at Windows sign-in)**, separate per-CLI model, effort, permissions, executable paths; browser bookmarks; and login options (guard Claude login, retain login, save passwords, clear saved login). Setup also offers an optional startup task, and uninstall cleans up the startup registry entry.
+- **Settings (⚙ 설정):** Interface language, **Startup (launch at Windows sign-in)**, **Scheduled tasks (repeat every minute or by cron)**, separate per-CLI model, effort, permissions, executable paths; browser bookmarks; and login options (guard Claude login, retain login, save passwords, clear saved login). Setup also offers an optional startup task, and uninstall cleans up the startup registry entry.
 - **Usage strip:** Always visible, including in Settings and browser tabs, so remaining Claude/GPT/Gemini quota is visible before picking a CLI. The active tab's account has a green border; usage turns yellow at 60% and red at 85%. Unavailable readings show `—`, with the reason on hover. Accounts for uninstalled CLIs are omitted.
 - **Bookmarks:** Top-row buttons open addresses in **in-app browser tabs**. Add/remove any number of names and URLs in Settings; list order is button order. Hide retains the URL but removes the button. Browser profiles preserve login/SSO across app restarts. **Session-cookie sites** such as internal GitLab require Settings → Browser login → Keep login (enabled by default). Cookies with expiry times, such as Jira's, already persist normally.
 - **Tab context menu:** Rename (also double-click), reset name, close, or close all other tabs. CLI tabs also offer **Continue with another CLI/account**, open folder, and copy path; browser tabs offer copy URL and reload. Names persist across restarts; clearing restores the automatic folder/document title.
@@ -446,3 +446,34 @@ file edits and commands run remotely right away. Revoke chats you no longer use.
 
 Checks: `dotnet run --project tests/TelegramChecks/TelegramChecks.csproj`. A fake Bot API and fake app cover pairing, question to final answer,
 approval buttons, stale-message blocking and revocation. No real Telegram, settings file or CLI is used.
+
+## Scheduled tasks (1.9.7)
+
+Send a prompt to a CLI tab at set times and collect the result. Tasks can repeat **as often as every minute**. They run only while the app is open
+(turn on launch at Windows startup to keep them going after sign-in).
+
+Settings → **Scheduled tasks** → **＋ Add schedule**
+
+| Field | Choice |
+| --- | --- |
+| Prompt | Text sent to the CLI as one turn at the scheduled time |
+| Send to | **Open a new tab** (folder · CLI · account · model · reasoning effort; keep or close the tab afterwards) or **An open tab** (the name shown in the tab bar — custom name or folder name) |
+| Repeat | **Fixed interval** (every N minutes/hours, 1 minute to 7 days) · **Daily** HH:MM · **Weekdays** + HH:MM · **Once** (date and time) · **Cron expression** |
+| Telegram notification | Sends the final answer to your paired Telegram chats when done (requires Telegram remote) |
+
+- Cron uses the standard 5 fields (`minute hour day month weekday`) with `*`, `*/n`, `a-b`, `a-b/n`, `a,b` and English names (`MON`, `JAN`); weekday 7 is Sunday.
+  When both day and weekday are restricted, either one matching is enough (as in Vixie cron). Examples: `*/10 * * * *` (every 10 min), `0 9 * * 1-5` (weekdays at 9:00).
+- The editor previews the **next three runs**. Times are this PC's local time. "Every N minutes" counts from when the task was saved.
+- **Overlaps wait.** If the previous run is still going when the next time arrives, that run is noted once and starts right after the previous one finishes —
+  only once, however many times pass meanwhile. Runs missed while the app was closed are not replayed at startup.
+- New tabs open **in the background without taking over your current view** (tab name `⏰ task name`). For short intervals choose [Close tab when done] —
+  tabs are closed only on success; failed ones stay open for inspection.
+- Completion works like Telegram remote (quiet output, no `esc to interrupt`, the transcript's last item is answer text). Approval/choice prompts
+  are reported in the log (and Telegram, if enabled) and the run waits for you. A run with no working indicator and no prompt for 60 s is treated as finished.
+- Results go to the **Run history** below (latest 100, `%LOCALAPPDATA%\AgentCLIHub\schedule-history.json`); click a row for the final answer or error.
+  [Run now] runs once regardless of the schedule. Task definitions live in `Schedules` in settings.json.
+
+**Caution**: with a no-approval permission setting, scheduled prompts edit files and run commands unattended.
+
+Checks: `dotnet run --project tests/ScheduleChecks/ScheduleChecks.csproj`. Covers cron/next-run calculation and validation, and — with a fake clock and fake app —
+1-minute runs, one catch-up run after overlaps, run now, disabled tasks, missing tabs, opening and closing new tabs, one-time tasks and approval notifications.

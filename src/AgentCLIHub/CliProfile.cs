@@ -236,6 +236,47 @@ public sealed class CliProfile
     public string EffortOf(Settings s) => Kind switch { CliKind.Claude => s.ClaudeEffort, CliKind.Codex => s.CodexEffort, _ => s.AntigravityEffort };
 
     /// <summary>
+    /// 탭·예약 작업마다 따로 지정한 모델·추론 강도를 설정 사본에 얹는다(디스크에는 안 쓴다).
+    /// 비어 있는 쪽은 원래 <paramref name="s"/> 값을 그대로 쓰고, 최종 모델 기준으로 추론 강도를 한 번 더 거른다 —
+    /// 전역 설정이 <c>gpt-5.6 + ultra</c> 인데 예약 작업만 <c>gpt-5.5</c> 로 바꿨을 때 안 맞는 강도가 나가지 않게 한다.
+    /// </summary>
+    public Settings WithOverrides(Settings s, string? modelOverride, string? effortOverride, Action<string, string>? log = null)
+    {
+        var hasModel = !string.IsNullOrWhiteSpace(modelOverride);
+        var hasEffort = !string.IsNullOrWhiteSpace(effortOverride);
+        if (!hasModel && !hasEffort) return s;
+
+        var rawModel = hasModel ? modelOverride!.Trim() : ModelOf(s);
+        var model = CliCatalog.ClampModel(Backend, rawModel, log);
+        var rawEffort = hasEffort ? effortOverride!.Trim() : EffortOf(s);
+        var effort = CliCatalog.ClampEffort(Backend, model, rawEffort, log);
+
+        var copy = new Settings
+        {
+            ClaudeModel = s.ClaudeModel,
+            ClaudeEffort = s.ClaudeEffort,
+            ClaudeCodePermissionMode = s.ClaudeCodePermissionMode,
+            CodexModel = s.CodexModel,
+            CodexEffort = s.CodexEffort,
+            CodexSandbox = s.CodexSandbox,
+            CodexApproval = s.CodexApproval,
+            AntigravityModel = s.AntigravityModel,
+            AntigravityEffort = s.AntigravityEffort,
+            AntigravityPermission = s.AntigravityPermission,
+            ClaudeCliPath = s.ClaudeCliPath,
+            CodexCliPath = s.CodexCliPath,
+            AntigravityCliPath = s.AntigravityCliPath,
+        };
+        switch (Kind)
+        {
+            case CliKind.Claude: copy.ClaudeModel = model; copy.ClaudeEffort = effort; break;
+            case CliKind.Codex: copy.CodexModel = model; copy.CodexEffort = effort; break;
+            default: copy.AntigravityModel = model; copy.AntigravityEffort = effort; break;
+        }
+        return copy;
+    }
+
+    /// <summary>
     /// 이 CLI 를 띄울 때 설정에서 걸리는 것 — (이름, 값). 빈 값은 안 걸리므로(= CLI 기본값) 빠진다.
     ///
     /// [＋ 새 대화] 의 고르기 창이 "이것으로 뜬다" 를 보여 줄 때 쓴다. **커맨드라인이 읽는 칸과

@@ -57,6 +57,8 @@ public sealed class TerminalHost : IDisposable
     public string? HandoffPath { get; init; }
     public string? ResumeTranscriptPath { get; init; }
     public ResumeMode InitialResume { get; init; } = ResumeMode.New;
+    public string? ModelOverride { get; init; }
+    public string? EffortOverride { get; init; }
     private SessionCheckpoint? _checkpoint;
     public SessionCheckpoint Checkpoint => _checkpoint ?? SessionCheckpoint.From(InitialResume);
 
@@ -97,6 +99,8 @@ public sealed class TerminalHost : IDisposable
     {
         var checkpoint = Checkpoint;
         return new TabState { Kind = "cli", Cwd = Cwd, Backend = Cli.Backend, Name = alias, Account = Account,
+            Model = string.IsNullOrWhiteSpace(ModelOverride) ? null : ModelOverride.Trim(),
+            Effort = string.IsNullOrWhiteSpace(EffortOverride) ? null : EffortOverride.Trim(),
             HandoffPath = HandoffPath, SessionId = checkpoint.Id, TranscriptPath = checkpoint.TranscriptPath, Fresh = checkpoint.Fresh };
     }
 
@@ -552,7 +556,8 @@ public sealed class TerminalHost : IDisposable
                     _checkpoint = new(latest.Id, latest.Path, false);
                 }
 
-                line = Cli.BuildCommandLine(loc.CommandHead(), cfg, resume, Cwd, CodexHome, newId,
+                var launchCfg = Cli.WithOverrides(cfg, ModelOverride, EffortOverride, _log);
+                line = Cli.BuildCommandLine(loc.CommandHead(), launchCfg, resume, Cwd, CodexHome, newId,
                                             claudeDir ? ClaudeHome : null);
             }
 
