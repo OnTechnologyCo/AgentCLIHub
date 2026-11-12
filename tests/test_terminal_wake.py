@@ -484,6 +484,155 @@ class TerminalWakeTests(unittest.TestCase):
         self.assertTrue(self.page.evaluate("sent.some(m => m.t === 'tab.resume' && m.backend === 'antigravity_cli' && m.sessionId === 'ag-session')"))
 
 
+    def schedule_state(self, **extra):
+        job = {"Id": "job1", "Name": "빌드 점검", "Enabled": True, "Prompt": "빌드 상태를 알려 줘", "Target": "tab",
+               "TabName": "project", "Folder": "", "Backend": "antigravity_cli", "Account": "", "Model": "", "Effort": "", "CloseTab": False,
+               "Repeat": "interval", "Every": 1, "Unit": "m", "Time": "09:00", "Days": [1, 3], "At": "", "Cron": "",
+               "Telegram": False, "next": 1789000000000, "running": False, "pending": False,
+               "last": {"runId": "r1", "jobId": "job1", "jobName": "빌드 점검", "trigger": "auto", "started": 1788999900000,
+                        "finished": 1788999960000, "status": "ok", "tab": "project", "answer": "빌드 정상", "error": ""}}
+        job.update(extra)
+        self.message(t="sched.state", state={"jobs": [job], "history": [job["last"]], "telegram": False, "note": ""})
+        return job
+
+    def test_schedule_card_lists_runs_and_saves_minute_task(self):
+        self.page.locator("#tab-conf").click()
+        self.antigravity_config()
+        self.schedule_state()
+        row = self.page.locator("#sched-list .sjob[data-sched-id='job1']")
+        self.assertIn("빌드 점검", row.inner_text())
+        self.assertIn("1분마다", row.inner_text())
+        self.assertIn("탭: project", row.inner_text())
+        self.assertIn("최근 성공", row.inner_text())
+        row.get_by_role("button", name="지금 실행", exact=True).click()
+        self.assertTrue(self.page.evaluate("sent.some(m => m.t === 'sched.run' && m.id === 'job1')"))
+        row.locator("select").select_option("false")
+        self.assertTrue(self.page.evaluate("sent.some(m => m.t === 'sched.enable' && m.id === 'job1' && m.on === false)"))
+        hist = self.page.locator("#sched-hist .shrow").first
+        hist.click()
+        self.assertIn("빌드 정상", hist.locator("pre").inner_text())
+
+        self.page.locator("#sched-add").click()
+        self.assertTrue(self.page.locator("#sched-add").is_disabled())
+        self.page.locator("#sched-prompt").fill("테스트 결과를 요약해 줘")
+        self.page.locator("#sched-target").select_option("tab")
+        self.page.locator("#sched-tab").fill("project")
+        self.page.locator("#sched-repeat").select_option("interval")
+        self.page.locator("#sched-every").fill("1")
+        self.page.locator("#sched-telegram").select_option("true")
+        self.page.clock.run_for(400)
+        self.assertTrue(self.page.evaluate("sent.some(m => m.t === 'sched.preview' && m.job.Every === 1)"))
+        seq = self.page.evaluate("sent.filter(m => m.t === 'sched.preview').at(-1).seq")
+        self.message(t="sched.preview", seq=seq, times=[1789000060000, 1789000120000], error=None)
+        self.assertNotEqual(self.page.locator("#sched-preview").inner_text(), "")
+        self.page.locator("#sched-save").click()
+        saved = self.page.evaluate("sent.filter(m => m.t === 'sched.save').at(-1).job")
+        self.assertEqual((saved["Target"], saved["TabName"], saved["Repeat"], saved["Every"], saved["Unit"], saved["Telegram"]),
+                         ("tab", "project", "interval", 1, "m", True))
+        self.assertEqual(saved["Prompt"], "테스트 결과를 요약해 줘")
+        self.message(t="sched.saved", ok=False, error="간격은 1분 이상이어야 합니다.")
+        self.assertIn("1분 이상", self.page.locator("#sched-err").inner_text())
+        self.message(t="sched.saved", ok=True, id="job2")
+        self.assertEqual(self.page.locator("#sched-form").inner_text(), "")
+
+    def test_schedule_new_tab_form_and_weekly_cron_inputs(self):
+        self.page.locator("#tab-conf").click()
+        self.antigravity_config()
+        self.schedule_state()
+        self.page.locator("#sched-list .sjob").get_by_role("button", name="편집", exact=True).click()
+        self.assertEqual(self.page.locator("#sched-prompt").input_value(), "빌드 상태를 알려 줘")
+        self.page.locator("#sched-target").select_option("new")
+        self.page.locator("#sched-folder").fill("D:/작업 폴더")
+        self.page.locator("#sched-model").select_option("__custom_model__")
+        self.page.locator("#sched-model-custom").fill("gemini-2.5-flash")
+        self.page.locator("#sched-effort").select_option("low")
+        self.page.locator("#sched-close").select_option("true")
+        self.page.locator("#sched-repeat").select_option("weekly")
+        self.page.locator("#sched-days input[data-day='5']").check()
+        self.page.locator("#sched-time").fill("18:30")
+        # 다른 상태가 와도 편집 중인 값은 그대로다.
+        self.schedule_state(running=True, pending=True, Target="new", Folder="D:/작업 폴더", Model="gemini-2.5-flash", Effort="low")
+        self.assertIn("끝나면 한 번 더 실행", self.page.locator("#sched-list").inner_text())
+        self.assertIn("gemini-2.5-flash · low", self.page.locator("#sched-list").inner_text())
+        self.assertEqual(self.page.locator("#sched-folder").input_value(), "D:/작업 폴더")
+        self.assertEqual(self.page.locator("#sched-model-custom").input_value(), "gemini-2.5-flash")
+        self.page.locator("#sched-save").click()
+        saved = self.page.evaluate("sent.filter(m => m.t === 'sched.save').at(-1).job")
+        self.assertEqual((saved["Id"], saved["Target"], saved["Folder"], saved["Model"], saved["Effort"], saved["CloseTab"], saved["Repeat"], saved["Days"], saved["Time"]),
+                         ("job1", "new", "D:/작업 폴더", "gemini-2.5-flash", "low", True, "weekly", [1, 3, 5], "18:30"))
+        self.page.locator("#sched-repeat").select_option("cron")
+        self.page.locator("#sched-cron").fill("*/5 9-18 * * 1-5")
+        self.page.locator("#sched-save").click()
+        self.assertEqual(self.page.evaluate("sent.filter(m => m.t === 'sched.save').at(-1).job.Cron"), "*/5 9-18 * * 1-5")
+        self.page.locator("#sched-folder").fill("")
+        self.page.get_by_role("button", name="찾아보기", exact=True).last.click()
+        self.assertTrue(self.page.evaluate("sent.some(m => m.t === 'sched.pick')"))
+        self.message(t="sched.picked", path="C:/picked")
+        self.assertEqual(self.page.locator("#sched-folder").input_value(), "C:/picked")
+
+    def test_background_schedule_tab_does_not_steal_focus(self):
+        self.open_terminal()
+        self.page.locator("#input").fill("작성 중")
+        self.message(t="tab.opened", id="t9", kind="cli", cwd="C:/w", name="w", backend="claude_code", cli="Claude Code",
+                     alias="⏰ 점검", account="", background=True)
+        self.page.clock.run_for(100)
+        self.assertEqual(self.page.evaluate("active"), "cx")
+        self.assertTrue(self.page.evaluate("TABS.has('t9')"))
+        self.assertTrue(self.page.evaluate("sent.some(m => m.t === 'term.start' && m.id === 't9')"))
+        self.assertEqual(self.page.locator("#input").input_value(), "작성 중")
+
+    def test_schedule_model_and_effort_adapt_to_selected_cli(self):
+        self.page.locator("#tab-conf").click()
+        self.message(
+            t="conf", file="C:/test/settings.json", version="1.9.7",
+            settings={"UiLanguage": "ko", "Bookmarks": [], "CodexModel": "gpt-5.6", "CodexEffort": "ultra"},
+            catalog={
+                "claude_code": {"display": "Claude Code", "memoryFile": "CLAUDE.md", "models": ["opus", "sonnet", "haiku"],
+                                "modelsComplete": False, "efforts": ["low", "medium", "high", "max"],
+                                "modelKey": "ClaudeModel", "effortKey": "ClaudeEffort", "pathKey": "ClaudeCliPath", "perm": []},
+                "codex_cli": {"display": "Codex", "memoryFile": "AGENTS.md", "models": ["gpt-5.5", "gpt-5.6"],
+                              "modelsComplete": True, "efforts": ["low", "medium", "high", "xhigh", "ultra"],
+                              "effortsByModel": {"gpt-5.5": ["low", "medium", "high", "xhigh"], "gpt-5.6": ["low", "medium", "high", "xhigh", "ultra"]},
+                              "modelKey": "CodexModel", "effortKey": "CodexEffort", "pathKey": "CodexCliPath", "perm": []},
+            },
+            accounts=[{"backend": "claude_code", "id": "", "name": "기본", "loggedIn": True},
+                      {"backend": "codex_cli", "id": "", "name": "기본", "loggedIn": True}],
+            detect={"claude_code": {"found": True, "path": "claude", "source": "PATH"},
+                    "codex_cli": {"found": True, "path": "codex", "source": "PATH"}})
+        self.schedule_state()
+        self.page.locator("#sched-add").click()
+        self.page.locator("#sched-model").fill("haiku")
+        self.page.locator("#sched-effort").select_option("low")
+        # CLI 를 바꾸면 이전 CLI 의 모델·추론 강도가 섞이지 않게 비우고 새 CLI 의 목록을 보여 준다.
+        self.page.locator("#sched-backend").select_option("codex_cli")
+        self.assertEqual(self.page.locator("#sched-model").input_value(), "")
+        self.assertEqual(self.page.locator("#sched-effort").input_value(), "")
+        # 모델이 (설정 기본값) 이면 전역 CodexModel(gpt-5.6) 기준으로 ultra 가 열리고, gpt-5.5 로 바꾸면 빠진다.
+        self.assertIn("ultra", self.page.locator("#sched-effort option").all_text_contents())
+        self.page.locator("#sched-effort").select_option("ultra")
+        self.page.locator("#sched-model").select_option("gpt-5.5")
+        self.assertNotIn("ultra", self.page.locator("#sched-effort option").all_text_contents())
+        self.assertEqual(self.page.locator("#sched-effort").input_value(), "")
+
+    def test_english_schedule_card_has_no_untranslated_labels(self):
+        self.page.locator("#tab-conf").click()
+        self.antigravity_config(language="en")
+        self.schedule_state(Name="Nightly", Prompt="check", TabName="proj", Repeat="weekly",
+                            last={"runId": "r1", "jobId": "job1", "jobName": "Nightly", "trigger": "manual", "started": 1788999900000,
+                                  "finished": 1788999960000, "status": "failed", "tab": "proj", "answer": "", "error": "Tab 'proj' was not found."})
+        import re
+        self.page.locator("#sched-add").click()
+        for repeat in ("interval", "daily", "weekly", "once", "cron"):
+            self.page.locator("#sched-repeat").select_option(repeat)
+            for target in ("new", "tab"):
+                self.page.locator("#sched-target").select_option(target)
+                if target == "new":
+                    self.page.locator("#sched-model").select_option("__custom_model__")
+                text = self.page.locator("#conf").inner_text().replace("한국어", "")
+                self.assertIsNone(re.search(r"[가-힣]", text), f"{repeat}/{target}: {text}")
+        self.assertIn("Weekly Mon, Wed", self.page.locator("#sched-list").inner_text())
+        self.assertIn("Last failure", self.page.locator("#sched-list").inner_text())
+
     def history_fixture(self):
         self.page.locator("#resume").click()
         self.message(t="history", items=[

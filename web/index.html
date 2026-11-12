@@ -163,6 +163,32 @@
   .row2 { display: flex; gap: 6px; }
   .note { color: #6b7684; font-size: 11.5px; margin-top: 9px; white-space: pre-wrap; }
 
+  /* 예약 작업. 작업 줄(이름 · 일정 · 상태 | 단추)과 편집 칸, 실행 기록. */
+  .schedbox { margin-top: 10px; }
+  .sbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .sjob { display: grid; grid-template-columns: 1fr auto; gap: 3px 10px; align-items: center;
+          padding: 8px 0; border-top: 1px solid #262626; }
+  .sjob .sn { font-size: 12.5px; color: #dde; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sjob .sd { font-size: 11.5px; color: #8b95a1; grid-column: 1; white-space: pre-wrap; word-break: break-all; }
+  .sjob .so { display: flex; gap: 4px; grid-row: 1 / span 2; grid-column: 2; align-items: center; }
+  .sjob .so .btn { padding: 4px 8px; }
+  .sjob select { background: #141414; color: #ddd; border: 1px solid #333; border-radius: 4px; padding: 3px 5px; font-size: 12px; }
+  .sstat.ok { color: #7ea; } .sstat.bad { color: #d99; } .sstat.run { color: #ffd27a; }
+  .sempty { color: #6b7684; font-size: 12px; padding: 8px 0; }
+  .sform { border: 1px solid #2c3a33; border-radius: 6px; padding: 2px 12px 12px; margin-top: 10px; }
+  .sform .sft { font-size: 12px; color: #8FD8A8; margin-top: 10px; }
+  .sform textarea { background: #141414; color: #ddd; border: 1px solid #333; border-radius: 4px; padding: 5px 7px;
+                    font: inherit; font-size: 12px; width: 100%; resize: vertical; min-height: 70px; }
+  .sform textarea:focus { outline: none; border-color: #3d6152; }
+  .sdays { display: flex; gap: 10px; flex-wrap: wrap; }
+  .sdays label { color: #ccd; display: flex; gap: 4px; align-items: center; font-size: 12px; }
+  .sdays input { width: auto !important; }
+  .shist { margin-top: 12px; }
+  .shist .sh { font-size: 11.5px; color: #99a; margin-bottom: 4px; display: flex; gap: 8px; align-items: center; }
+  .shrow { font-size: 11.5px; color: #aab; padding: 4px 0; cursor: pointer; border-top: 1px solid #222; word-break: break-all; }
+  .shrow pre { white-space: pre-wrap; color: #cde; background: #141414; padding: 6px 8px; border-radius: 4px; margin: 4px 0 2px;
+               font-family: Consolas, monospace; font-size: 11.5px; max-height: 260px; overflow: auto; cursor: text; }
+
   /* 오른쪽 버튼 차림표. 창 어디에나 뜨므로 제일 위에 둔다 — 다만 브라우저 판(WebView2)은
      HwndHost 라 HTML 위에 그려지므로, 브라우저 탭 안에서는 그쪽 기본 차림표가 뜬다. */
   #menu {
@@ -604,8 +630,11 @@ function addTab(m) {
     log(tr('xterm.js 를 불러오지 못했습니다 (vendor/xterm.js)'), 'e');
   }
 
-  showTab(m.id);
-  renderTabs();
+  // 예약 작업이 연 탭은 **보던 화면을 빼앗지 않는다** — 1분마다 도는 작업이 화면을 바꾸면 치던 글이 엉뚱한
+  // 탭으로 간다. 볼 탭이 하나도 없을 때만 그 탭을 띄운다. 숨은 채로 뜬 터미널은 80×24 로 시작하고,
+  // 사용자가 그 탭을 열면 크기를 다시 맞춘다.
+  if (m.background && (active || confOn)) renderTabs();
+  else { showTab(m.id); renderTabs(); }
 
   // **열자마자 띄운다.** 열·행은 화면만 아는 값이라 여기서 보낸다 —
   // 호스트가 짐작한 크기로 띄우면 첫 화면이 어긋난 채 그려지고 TUI 는 그대로 계속 그린다.
@@ -2289,6 +2318,19 @@ function renderConf() {
     tr('파일 수정·명령 실행까지 원격에서 바로 일어납니다. 쓰지 않는 대화는 [×] 로 지우세요. \n') +
     tr('토큰은 이 Windows 계정에 묶여 암호화됩니다(DPAPI). 이 PC 로 들어오는 포트는 열지 않습니다 — 텔레그램 서버에서 받아 옵니다.'));
 
+  // ── 예약 작업 ──────────────────────────────────────
+  // **여기 단추도 누르는 즉시 일어난다**(아래 [저장] 과 무관하다) — 일정은 저장하는 순간부터 센다.
+  const g9 = card(tr('예약 작업'));
+  g9.id = 'sched-grid';
+  g9.className = 'schedbox';
+  renderSchedules();
+  note(g9,
+    tr('정해 둔 시각에 CLI 탭으로 프롬프트를 보내고, 끝나면 결과를 아래 실행 기록에 남깁니다. 최소 1분 간격까지 정할 수 있습니다.\n') +
+    tr('앱이 켜져 있는 동안만 동작합니다 — 꺼져 있던 동안 지나간 회차는 켤 때 몰아서 실행하지 않습니다.\n') +
+    tr('이전 실행이 끝나지 않았는데 다음 시각이 오면, 끝난 뒤 한 번만 이어서 실행합니다.\n') +
+    tr('[새 탭 열기] 는 실행할 때마다 탭을 새로 열며, 모델·추론 강도를 작업마다 따로 고를 수 있습니다(비우면 설정 기본값). 간격이 짧으면 [끝나면 탭 닫기] 를 고르세요. 보던 화면은 바뀌지 않습니다.\n') +
+    tr('승인 창이 뜨면 기록(과 켜 두면 텔레그램)으로 알리고 기다립니다. **승인 없이 도는 권한 설정이면 예약한 프롬프트가 파일 수정·명령 실행까지 자동으로 진행합니다.**'));
+
   // ── 저장 ───────────────────────────────────────────
   const bar = document.createElement('div');
   bar.style.cssText = 'display:flex;gap:8px;align-items:center;max-width:860px';
@@ -2385,6 +2427,455 @@ function renderTelegram() {
     const r = row(i === 0 ? tr('허용된 대화') : '', span((c.name || tr('(이름 없음)')) + ' · ' + c.id));
     r.append(button('×', tr('이 대화의 허용을 거둡니다'), () => wv?.postMessage({ t: 'tg.chat.remove', id: c.id })));
   });
+}
+
+// ── 예약 작업 칸 ─────────────────────────────────────
+// 상태(sched.state)가 올 때마다 **목록과 기록만** 다시 그린다. 편집 칸은 손대지 않는다 — 1분마다 도는 작업이
+// 끝날 때마다 편집 칸을 다시 그리면 치던 글자와 커서가 날아간다. 편집 값은 SCHED_EDIT 에 바로 적어 둔다.
+let SCHED_EDIT = null;
+let schedManualModel = false;
+const SCHED_OPEN = new Set();
+let schedPreviewSeq = 0, schedPreviewTimer = 0;
+const SCHED_DAYS = ['일요일', '월요일', '화요일', '수요일', '목요일', '금요일', '토요일'];
+
+function schedFmt(ms) {
+  if (!ms) return '';
+  return new Date(ms).toLocaleString(UiLanguage.current === 'en' ? 'en-US' : 'ko-KR',
+    { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
+}
+
+function schedWhen(j) {
+  switch (j.Repeat) {
+    case 'interval': return j.Unit === 'h' ? tr`${j.Every}시간마다` : tr`${j.Every}분마다`;
+    case 'daily': return tr`매일 ${j.Time}`;
+    case 'weekly': return tr`매주 ${(j.Days || []).map(d => tr(SCHED_DAYS[d])).join(', ')} ${j.Time}`;
+    case 'once': return tr`한 번 · ${(j.At || '').replace('T', ' ')}`;
+    case 'cron': return 'cron · ' + (j.Cron || '');
+  }
+  return '';
+}
+
+function schedAccountLabel(a) { return a.id === '' && (!a.name || a.name === '기본') ? tr('기본') : a.name; }
+
+function schedWhere(j) {
+  if (j.Target === 'tab') return tr`탭: ${j.TabName}`;
+  const cli = CONF.catalog?.[j.Backend]?.display || cliName(j.Backend);
+  const acc = j.Account ? (CONF.accounts || []).find(a => a.backend === j.Backend && a.id === j.Account) : null;
+  const model = j.Model ? (CONF.catalog?.[j.Backend]?.modelLabels?.[j.Model] || j.Model) : '';
+  return tr`새 탭: ${j.Folder} · ${cli}`
+    + (acc ? ' · ' + schedAccountLabel(acc) : '')
+    + (model ? ' · ' + model : '')
+    + (j.Effort ? ' · ' + j.Effort : '')
+    + (j.CloseTab ? tr(' · 끝나면 닫기') : '');
+}
+
+function schedNewDraft() {
+  const at = new Date(Date.now() + 3600000);
+  const pad = n => String(n).padStart(2, '0');
+  const backends = Object.keys(CONF?.catalog || {});
+  return { Id: '', Name: '', Enabled: true, Prompt: '', Target: 'new', TabName: '', Folder: '',
+           Backend: backends.includes('claude_code') ? 'claude_code' : (backends[0] || 'claude_code'),
+           Account: '', Model: '', Effort: '', CloseTab: false, Repeat: 'interval', Every: 60, Unit: 'm', Time: '09:00', Days: [1, 2, 3, 4, 5],
+           At: `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}T${pad(at.getHours())}:${pad(at.getMinutes())}`,
+           Cron: '*/30 * * * *', Telegram: false };
+}
+
+function schedDraftOf(j) {
+  const base = schedNewDraft();
+  const d = {};
+  for (const k of Object.keys(base)) d[k] = Array.isArray(j[k]) ? [...j[k]] : (j[k] ?? base[k]);
+  return d;
+}
+
+function updateSchedAntigravityModelOptions() {
+  if (!CONF || !SCHED_EDIT || SCHED_EDIT.Backend !== 'antigravity_cli') return;
+  const sel = $('sched-model'), custom = $('sched-model-custom');
+  if (!sel || !custom) return;
+  const k = cat('antigravity_cli');
+  const value = SCHED_EDIT.Model || '';
+  const models = k.models || [];
+  sel.replaceChildren();
+  const add = (id, name) => {
+    const o = document.createElement('option');
+    o.value = id; o.textContent = name; sel.appendChild(o);
+  };
+  add('', tr('(설정 기본값)'));
+  models.forEach(id => add(id, k.modelLabels?.[id] || id));
+  add('__custom_model__', tr('직접 입력…'));
+  const manual = schedManualModel || (value !== '' && !models.includes(value));
+  sel.value = manual ? '__custom_model__' : value;
+  custom.hidden = !manual;
+  custom.value = value;
+}
+
+function renderSchedules(formToo = true) {
+  const g = document.getElementById('sched-grid');
+  if (!g || !CONF) return;
+  if (!g.querySelector('#sched-list')) {
+    g.replaceChildren();
+    const bar = document.createElement('div'); bar.className = 'sbar'; bar.id = 'sched-bar';
+    const list = document.createElement('div'); list.id = 'sched-list';
+    const form = document.createElement('div'); form.id = 'sched-form';
+    const hist = document.createElement('div'); hist.id = 'sched-hist'; hist.className = 'shist';
+    g.append(bar, list, form, hist);
+    formToo = true;
+  }
+  renderSchedBar();
+  renderSchedList();
+  renderSchedHist();
+  if (formToo) renderSchedForm();
+}
+
+function schedButton(text, title, fn, cls = 'btn') {
+  const b = document.createElement('button');
+  b.className = cls; b.textContent = text;
+  if (title) b.title = title;
+  b.addEventListener('click', fn);
+  return b;
+}
+
+function renderSchedBar() {
+  const bar = $('sched-bar');
+  if (!bar) return;
+  bar.replaceChildren();
+  const add = schedButton(tr('＋ 예약 추가'), tr('새 예약 작업을 만듭니다'), () => {
+    SCHED_EDIT = schedNewDraft();
+    schedManualModel = false;
+    renderSchedForm();
+    $('sched-name')?.focus();
+  }, 'btn act');
+  add.id = 'sched-add';
+  add.disabled = !!SCHED_EDIT;
+  bar.append(add);
+  const s = CONF.sched || {};
+  if (s.note) {
+    const n = document.createElement('span');
+    n.className = 'sstat bad'; n.style.fontSize = '12px';
+    n.textContent = tr(s.note);
+    bar.append(n);
+  }
+}
+
+function renderSchedList() {
+  const list = $('sched-list');
+  if (!list) return;
+  list.replaceChildren();
+  const jobs = CONF.sched?.jobs || [];
+  if (!jobs.length) {
+    const e = document.createElement('div');
+    e.className = 'sempty';
+    e.textContent = tr('예약 작업이 없습니다. [＋ 예약 추가] 로 만드세요.');
+    list.append(e);
+    return;
+  }
+  for (const j of jobs) {
+    const row = document.createElement('div');
+    row.className = 'sjob';
+    row.dataset.schedId = j.Id;
+
+    const name = document.createElement('div');
+    name.className = 'sn';
+    name.textContent = (j.Enabled ? '⏰ ' : '⏸ ') + j.Name;
+    name.title = j.Prompt;
+
+    const desc = document.createElement('div');
+    desc.className = 'sd';
+    desc.append(schedWhen(j) + '  ·  ' + schedWhere(j) + '\n');
+    const stat = (text, cls, title) => {
+      const e = document.createElement('span');
+      e.className = 'sstat' + (cls ? ' ' + cls : '');
+      e.textContent = text;
+      if (title) e.title = title;
+      desc.append(e);
+    };
+    if (j.running) stat(tr('실행 중…') + (j.pending ? tr(' · 끝나면 한 번 더 실행') : ''), 'run');
+    else if (!j.Enabled) stat(tr('꺼짐'));
+    else stat(j.next ? tr`다음 실행: ${schedFmt(j.next)}` : tr('다음 실행 없음'));
+    if (j.last && j.last.status !== 'running') {
+      desc.append('  ·  ');
+      const when = schedFmt(j.last.finished || j.last.started);
+      if (j.last.status === 'ok') stat(tr`최근 성공 · ${when}`, 'ok');
+      else stat(tr`최근 실패 · ${when}`, 'bad', tr(j.last.error));
+    }
+
+    const ops = document.createElement('div');
+    ops.className = 'so';
+    ops.append(schedButton(tr('지금 실행'), tr('일정과 상관없이 바로 한 번 실행합니다'), () => wv?.postMessage({ t: 'sched.run', id: j.Id })));
+    const edit = schedButton(tr('편집'), '', () => { SCHED_EDIT = schedDraftOf(j); schedManualModel = false; renderSchedForm(); $('sched-name')?.focus(); });
+    edit.disabled = !!SCHED_EDIT;
+    ops.append(edit);
+    const on = document.createElement('select');
+    [['true', tr('켜짐')], ['false', tr('꺼짐')]].forEach(([v, t]) => {
+      const o = document.createElement('option'); o.value = v; o.textContent = t; on.appendChild(o);
+    });
+    on.value = j.Enabled ? 'true' : 'false';
+    on.addEventListener('change', () => wv?.postMessage({ t: 'sched.enable', id: j.Id, on: on.value === 'true' }));
+    ops.append(on);
+    const del = schedButton('×', tr('이 예약 작업을 지웁니다'), () => {
+      // **한 번 묻는다.** 되돌릴 수 없는 것을 한 번의 실수로 날리게 두지 않는다.
+      if (del.dataset.armed !== '1') {
+        del.dataset.armed = '1'; del.textContent = tr('정말 지울까요? (다시 누르기)'); del.classList.add('on');
+        setTimeout(() => { if (del.isConnected) { del.dataset.armed = ''; del.textContent = '×'; del.classList.remove('on'); } }, 4000);
+        return;
+      }
+      wv?.postMessage({ t: 'sched.remove', id: j.Id });
+    });
+    ops.append(del);
+
+    row.append(name, ops, desc);
+    list.append(row);
+  }
+}
+
+function renderSchedHist() {
+  const box = $('sched-hist');
+  if (!box) return;
+  box.replaceChildren();
+  const runs = CONF.sched?.history || [];
+  const head = document.createElement('div');
+  head.className = 'sh';
+  head.append(tr('실행 기록'));
+  if (runs.length) head.append(schedButton(tr('기록 지우기'), tr('끝난 실행 기록을 지웁니다'), () => wv?.postMessage({ t: 'sched.history.clear' })));
+  box.append(head);
+  if (!runs.length) {
+    const e = document.createElement('div');
+    e.className = 'sempty';
+    e.textContent = tr('아직 실행 기록이 없습니다.');
+    box.append(e);
+    return;
+  }
+  for (const r of runs) {
+    const row = document.createElement('div');
+    row.className = 'shrow';
+    const icon = r.status === 'ok' ? '✅' : r.status === 'running' ? '⏳' : '⚠';
+    const body = (r.status === 'failed' ? tr(r.error) : r.answer) || '';
+    const first = body.split('\n').find(l => l.trim()) || '';
+    row.textContent = `${schedFmt(r.started)}  ${icon} ${r.jobName}` + (r.trigger === 'manual' ? tr(' · 수동') : '') +
+                      (first ? '  —  ' + (first.length > 90 ? first.slice(0, 90) + '…' : first) : '');
+    if (SCHED_OPEN.has(r.runId) && (body || r.tab)) {
+      const pre = document.createElement('pre');
+      pre.textContent = (r.tab ? tr`탭: ${r.tab}` + '\n\n' : '') + body;
+      pre.addEventListener('click', e => e.stopPropagation());
+      row.append(pre);
+    }
+    row.addEventListener('click', () => {
+      if (SCHED_OPEN.has(r.runId)) SCHED_OPEN.delete(r.runId); else SCHED_OPEN.add(r.runId);
+      renderSchedHist();
+    });
+    box.append(row);
+  }
+}
+
+function schedPreview() {
+  clearTimeout(schedPreviewTimer);
+  if (!SCHED_EDIT) return;
+  schedPreviewTimer = setTimeout(() => wv?.postMessage({ t: 'sched.preview', seq: ++schedPreviewSeq, job: SCHED_EDIT }), 250);
+}
+
+function renderSchedForm() {
+  const box = $('sched-form');
+  if (!box) return;
+  box.replaceChildren();
+  renderSchedBar();
+  renderSchedList();
+  const d = SCHED_EDIT;
+  if (!d) return;
+
+  const wrap = document.createElement('div');
+  wrap.className = 'sform';
+  const title = document.createElement('div');
+  title.className = 'sft';
+  title.textContent = d.Id ? tr('예약 편집') : tr('새 예약');
+  const g = document.createElement('div');
+  g.className = 'grid';
+  wrap.append(title, g);
+  box.append(wrap);
+
+  const label = text => { const l = document.createElement('label'); l.textContent = text; return l; };
+  const row = (text, ...els) => {
+    const holder = els.length === 1 ? els[0] : (() => { const r = document.createElement('div'); r.className = 'row2'; r.append(...els); return r; })();
+    g.append(label(text), holder);
+    return holder;
+  };
+  const input = (key, opt = {}) => {
+    const e = document.createElement('input');
+    e.type = opt.type || 'text';
+    e.value = d[key] ?? '';
+    if (opt.placeholder) e.placeholder = opt.placeholder;
+    if (opt.id) e.id = opt.id;
+    if (opt.min !== undefined) e.min = opt.min;
+    e.addEventListener('input', () => { d[key] = opt.type === 'number' ? parseInt(e.value, 10) || 0 : e.value; if (opt.preview) schedPreview(); });
+    return e;
+  };
+  const select = (key, choices, opt = {}) => {
+    const e = document.createElement('select');
+    for (const [v, t] of choices) { const o = document.createElement('option'); o.value = v; o.textContent = t; e.appendChild(o); }
+    e.value = String(d[key]);
+    if (opt.id) e.id = opt.id;
+    e.addEventListener('change', () => {
+      d[key] = opt.bool ? e.value === 'true' : e.value;
+      if (opt.rerender) renderSchedForm();
+      if (opt.preview) schedPreview();
+    });
+    return e;
+  };
+
+  row(tr('이름'), input('Name', { id: 'sched-name', placeholder: tr('비우면 프롬프트 첫 줄') }));
+  const prompt = document.createElement('textarea');
+  prompt.id = 'sched-prompt';
+  prompt.value = d.Prompt || '';
+  prompt.placeholder = tr('정해 둔 시각에 CLI 로 보낼 내용');
+  prompt.addEventListener('input', () => { d.Prompt = prompt.value; });
+  row(tr('프롬프트'), prompt);
+
+  row(tr('보낼 곳'), select('Target', [['new', tr('새 탭 열기')], ['tab', tr('열려 있는 탭')]], { id: 'sched-target', rerender: true }));
+  if (d.Target === 'tab') {
+    const tabInput = input('TabName', { id: 'sched-tab', placeholder: tr('탭띠에 보이는 이름 그대로') });
+    const dl = document.createElement('datalist');
+    dl.id = 'sched-tabs';
+    for (const t of TABS.values()) {
+      if (t.kind !== 'cli' || t.login) continue;
+      const o = document.createElement('option');
+      o.value = t.alias || t.name;
+      dl.appendChild(o);
+    }
+    tabInput.setAttribute('list', dl.id);
+    wrap.append(dl);
+    row(tr('탭 이름'), tabInput);
+  } else {
+    const folder = input('Folder', { id: 'sched-folder', placeholder: tr('CLI 가 실행될 작업 폴더') });
+    folder.style.flex = '1';
+    row(tr('폴더'), folder, schedButton(tr('찾아보기'), '', () => wv?.postMessage({ t: 'sched.pick', path: d.Folder || '' })));
+    const backends = Object.keys(CONF.catalog || {});
+    if (!backends.includes(d.Backend)) backends.unshift(d.Backend);
+    const backendSel = select('Backend', backends.map(b => [b, CONF.catalog?.[b]?.display || cliName(b)]), { id: 'sched-backend' });
+    backendSel.addEventListener('change', () => {
+      d.Model = ''; d.Effort = ''; schedManualModel = false;
+      renderSchedForm();
+    });
+    row('CLI', backendSel);
+    const accs = (CONF.accounts || []).filter(a => a.backend === d.Backend);
+    const accChoices = accs.length ? accs.map(a => [a.id, schedAccountLabel(a)]) : [['', tr('기본')]];
+    if (!accChoices.some(([v]) => v === d.Account)) d.Account = accChoices[0][0];
+    row(tr('사용할 계정'), select('Account', accChoices, { id: 'sched-account' }));
+
+    const k = cat(d.Backend);
+    if (d.Backend === 'antigravity_cli') {
+      const mWrap = document.createElement('div');
+      const mSel = document.createElement('select');
+      mSel.id = 'sched-model'; mSel.style.width = '100%';
+      mSel.setAttribute('aria-label', tr('Antigravity 모델'));
+      const mCustom = document.createElement('input');
+      mCustom.id = 'sched-model-custom'; mCustom.style.width = '100%'; mCustom.style.marginTop = '6px';
+      mCustom.setAttribute('aria-label', tr('Antigravity 모델 직접 입력'));
+      mCustom.placeholder = tr('모델 ID 또는 이름');
+      mSel.addEventListener('change', () => {
+        schedManualModel = mSel.value === '__custom_model__';
+        mCustom.hidden = !schedManualModel;
+        if (schedManualModel) { mCustom.value = d.Model || ''; mCustom.focus(); }
+        else { d.Model = mSel.value; mCustom.value = mSel.value; }
+      });
+      mCustom.addEventListener('input', () => { d.Model = mCustom.value; });
+      mWrap.append(mSel, mCustom);
+      row(tr('모델'), mWrap);
+      updateSchedAntigravityModelOptions();
+    } else if (k.modelsComplete) {
+      const models = k.models || [];
+      if (d.Model && !models.includes(d.Model)) d.Model = '';
+      row(tr('모델'), select('Model', [['', tr('(설정 기본값)')], ...models.map(m => [m, m])], { id: 'sched-model', rerender: true }));
+    } else {
+      const mIn = input('Model', { id: 'sched-model', placeholder: tr('비우면 설정 기본값') });
+      if ((k.models || []).length) {
+        const dl = document.createElement('datalist');
+        dl.id = 'sched-models';
+        for (const m of k.models) { const o = document.createElement('option'); o.value = m; dl.appendChild(o); }
+        wrap.append(dl);
+        mIn.setAttribute('list', dl.id);
+      }
+      row(tr('모델'), mIn);
+    }
+    const effs = effortChoices(d.Backend, d.Model || CONF.settings?.[k.modelKey] || '');
+    if (d.Effort && !effs.includes(d.Effort)) d.Effort = '';
+    row(tr('추론 강도'), select('Effort', effs.map(e => [e, e === '' ? tr('(설정 기본값)') : e]), { id: 'sched-effort' }));
+
+    row(tr('실행 후 탭'), select('CloseTab', [['false', tr('탭 유지')], ['true', tr('끝나면 탭 닫기')]], { id: 'sched-close', bool: true }));
+  }
+
+  row(tr('반복'), select('Repeat', [['interval', tr('일정 간격')], ['daily', tr('매일')], ['weekly', tr('요일 지정')],
+                                     ['once', tr('한 번')], ['cron', tr('cron 식')]], { id: 'sched-repeat', rerender: true, preview: true }));
+  if (d.Repeat === 'interval') {
+    const every = input('Every', { id: 'sched-every', type: 'number', min: 1, preview: true });
+    every.style.width = '110px';
+    const unit = select('Unit', [['m', tr('분마다')], ['h', tr('시간마다')]], { id: 'sched-unit', preview: true });
+    unit.style.width = '140px';
+    row(tr('간격'), every, unit);
+  }
+  if (d.Repeat === 'daily' || d.Repeat === 'weekly') {
+    const time = input('Time', { id: 'sched-time', type: 'time', preview: true });
+    time.style.width = '140px';
+    row(tr('시각'), time);
+  }
+  if (d.Repeat === 'weekly') {
+    const days = document.createElement('div');
+    days.className = 'sdays';
+    days.id = 'sched-days';
+    SCHED_DAYS.forEach((name, i) => {
+      const l = document.createElement('label');
+      const c = document.createElement('input');
+      c.type = 'checkbox';
+      c.checked = (d.Days || []).includes(i);
+      c.dataset.day = String(i);
+      c.addEventListener('change', () => {
+        const set = new Set(d.Days || []);
+        if (c.checked) set.add(i); else set.delete(i);
+        d.Days = [...set].sort((a, b) => a - b);
+        schedPreview();
+      });
+      l.append(c, tr(name));
+      days.append(l);
+    });
+    row(tr('요일'), days);
+  }
+  if (d.Repeat === 'once') {
+    const at = input('At', { id: 'sched-at', type: 'datetime-local', preview: true });
+    at.style.width = '220px';
+    row(tr('날짜·시각'), at);
+  }
+  if (d.Repeat === 'cron') {
+    row(tr('cron 식'), input('Cron', { id: 'sched-cron', placeholder: '*/5 9-18 * * 1-5', preview: true }));
+    const hint = document.createElement('div');
+    hint.className = 'note'; hint.style.marginTop = '0';
+    hint.textContent = tr('분 시 일 월 요일 — 예: */10 * * * * (10분마다), 0 9 * * 1-5 (평일 9시), 30 18 * * FRI (금요일 18:30)');
+    g.append(label(''), hint);
+  }
+
+  const tg = select('Telegram', [['false', tr('안 보냄')], ['true', tr('보냄')]], { id: 'sched-telegram', bool: true });
+  tg.style.width = '140px';
+  const tgNote = document.createElement('span');
+  tgNote.className = 'note'; tgNote.style.margin = '0'; tgNote.style.alignSelf = 'center';
+  tgNote.textContent = CONF.sched?.telegram ? tr('페어링한 텔레그램 대화로 결과를 보냅니다.') : tr('텔레그램 원격을 연결하고 페어링해야 받습니다.');
+  row(tr('텔레그램 알림'), tg, tgNote);
+
+  const preview = document.createElement('span');
+  preview.id = 'sched-preview';
+  preview.style.fontSize = '12px'; preview.style.color = '#cde';
+  row(tr('다음 실행'), preview);
+
+  const err = document.createElement('span');
+  err.id = 'sched-err';
+  err.className = 'sstat bad'; err.style.fontSize = '12px';
+  const save = schedButton(tr('저장'), tr('예약 작업을 저장하고 바로 일정에 올립니다'), () => {
+    err.textContent = '';
+    wv?.postMessage({ t: 'sched.save', job: SCHED_EDIT });
+  }, 'btn act');
+  save.id = 'sched-save';
+  const cancel = schedButton(tr('취소'), '', () => { SCHED_EDIT = null; renderSchedForm(); });
+  cancel.id = 'sched-cancel';
+  const buttons = document.createElement('div');
+  buttons.className = 'row2'; buttons.style.cssText = 'align-items:center;margin-top:10px';
+  buttons.append(save, cancel, err);
+  wrap.append(buttons);
+  schedPreview();
 }
 
 function applyLanguage(value) {
@@ -2492,7 +2983,7 @@ wv?.addEventListener('message', ev => {
     case 'conf':
       CONF = { settings: m.settings, catalog: m.catalog, detect: m.detect, file: m.file,
                accounts: m.accounts || [], version: m.version || '', modelsPath: m.settings?.AntigravityCliPath || '',
-               telegram: m.telegram || null };
+               telegram: m.telegram || null, sched: m.sched || CONF?.sched || null };
       PetUI.apply(m.settings?.Pet);
       applyLanguage(m.settings?.UiLanguage || 'ko');
       renderSites();
@@ -2518,6 +3009,7 @@ wv?.addEventListener('message', ev => {
       CONF.modelsPath = m.path;
       CONF.modelsRequest = m.request; CONF.modelsLoading = true; CONF.modelsError = '';
       updateAntigravityModelOptions();
+      updateSchedAntigravityModelOptions();
       break;
 
     case 'conf.models':
@@ -2528,6 +3020,7 @@ wv?.addEventListener('message', ev => {
         CONF.catalog.antigravity_cli.modelLabels = m.modelLabels || {};
       }
       updateAntigravityModelOptions();
+      updateSchedAntigravityModelOptions();
       break;
 
     // [다른 계정으로 이어가기] 의 답 — 넘길 곳 목록. 누른 것에 대한 답이므로 받자마자 연다.
@@ -2675,6 +3168,27 @@ wv?.addEventListener('message', ev => {
 
     case 'tg.state':
       if (CONF) { CONF.telegram = m.state; renderTelegram(); }
+      break;
+
+    case 'sched.state':
+      if (CONF) { CONF.sched = m.state; renderSchedules(false); }
+      break;
+
+    case 'sched.saved':
+      if (m.ok) { SCHED_EDIT = null; renderSchedForm(); }
+      else if ($('sched-err')) $('sched-err').textContent = tr(m.error || '');
+      break;
+
+    case 'sched.preview':
+      if (m.seq === schedPreviewSeq && $('sched-preview')) {
+        const p = $('sched-preview');
+        p.style.color = m.error ? '#e88' : '#cde';
+        p.textContent = m.error ? tr(m.error) : ((m.times || []).map(schedFmt).join('  ·  ') || tr('없음'));
+      }
+      break;
+
+    case 'sched.picked':
+      if (SCHED_EDIT) { SCHED_EDIT.Folder = m.path || ''; renderSchedForm(); }
       break;
 
     case 'log': log(m.msg, m.level); break;

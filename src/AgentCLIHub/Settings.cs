@@ -41,6 +41,10 @@ public sealed class TabState
     /// 기본 계정으로 되살아나면 한도가 찬 계정으로 돌아가 곧바로 막힌다.
     /// </summary>
     public string Account { get; set; } = "";
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Model { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Effort { get; set; }
     public string? HandoffPath { get; set; }
     public string? SessionId { get; set; }
     public string? TranscriptPath { get; set; }
@@ -108,6 +112,9 @@ public sealed class Settings
 
     /// <summary>텔레그램 원격(<see cref="TelegramRemote"/>). 봇 토큰은 여기 없다 — <see cref="TelegramVault"/>.</summary>
     public TelegramSettings Telegram { get; set; } = new();
+
+    /// <summary>예약 작업(<see cref="ScheduleRunner"/>). 실행 기록은 따로 둔다 — <see cref="ScheduleHistory"/>.</summary>
+    public List<ScheduledJob> Schedules { get; set; } = [];
     public Dictionary<string, string> DefaultAccountNames { get; set; } = [];
     private string _uiLanguage = "ko";
     public string UiLanguage
@@ -341,6 +348,10 @@ public sealed class Settings
                 var s = JsonSerializer.Deserialize<Settings>(File.ReadAllText(FilePath)) ?? new Settings();
                 s.Pet ??= new(); s.Pet.Normalize();
                 s.Telegram ??= new(); s.Telegram.Chats ??= [];
+                s.Schedules ??= [];
+                s.Schedules.RemoveAll(j => j is null);
+                foreach (var j in s.Schedules) j.Normalize();
+                s.Schedules.RemoveAll(j => j.Id.Length == 0);
                 s.MigrateLegacySites();
                 s.MigrateSingleCli();
                 return s;

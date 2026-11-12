@@ -939,6 +939,24 @@ public sealed class TelegramRemote : IDisposable
         foreach (var part in TelegramText.Split(text)) await _api.SendMessageAsync(chat, part, ct: ct);
     }
 
+    /// <summary>
+    /// 앱이 먼저 보내는 알림(예약 작업 결과 등). 받을 대화는 부르는 쪽이 준다 — 페어링한 대화만 넘겨야 한다.
+    /// 한 대화가 실패해도 나머지에는 보낸다.
+    /// </summary>
+    public async Task NotifyAsync(IEnumerable<long> chats, string text)
+    {
+        if (!Connected || string.IsNullOrWhiteSpace(text)) return;
+        foreach (var chat in chats.Distinct())
+        {
+            if (!_host.IsAllowed(chat)) continue;
+            try { await Say(chat, text, _cts.Token); }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _host.Log("[Telegram] " + L("알림을 보내지 못했습니다: ", "Could not send a notification: ") + _api.Scrub(ex.Message), "w");
+            }
+        }
+    }
+
     private async Task Edit(long chat, long message, string text, JsonObject? markup, CancellationToken ct)
     {
         if (message == 0) return;
