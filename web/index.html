@@ -860,9 +860,11 @@ const ukey = (backend, account) => backend + '/' + (account || '');
  */
 const ACCOUNTS = [
   { backend: 'claude_code', name: 'Claude',
-    none: tr('사용량을 읽지 못했습니다 — 망이 끊겼거나 로그인 전일 수 있습니다.') },
+    none: '사용량을 읽지 못했습니다 — 망이 끊겼거나 로그인 전일 수 있습니다.' },
   { backend: 'codex_cli', name: 'GPT',
-    none: tr('사용량을 아직 모릅니다 — codex 는 한 턴을 주고받을 때마다 한도를 기록에 남기고, 여기는 그것을 읽습니다.') },
+    none: '사용량을 아직 모릅니다 — codex 는 한 턴을 주고받을 때마다 한도를 기록에 남기고, 여기는 그것을 읽습니다.' },
+  { backend: 'antigravity_cli', name: 'Gemini',
+    none: '사용량을 읽지 못했습니다 — 망이 끊겼거나 로그인 전일 수 있습니다.' },
 ];
 const acctBase = backend => ACCOUNTS.find(a => a.backend === backend) || ACCOUNTS[0];
 
@@ -943,7 +945,7 @@ function renderUsage() {
         ? tr`${name} — Console(API 과금) 계정은 5시간·주 한도가 아니라 사용한 만큼 과금돼 사용량 줄이 없습니다.`
         : a.id && a.backend === 'claude_code'
         ? tr`${name} — 사용량을 읽지 못했습니다. 한동안 안 쓴 계정은 로그인 토큰이 만료돼 있을 수 있습니다 — 그 계정으로 한 번 띄우면 다시 읽힙니다.`
-        : acctBase(a.backend).none;
+        : tr(acctBase(a.backend).none);
     } else {
       rows.forEach(w => {
         const lv = usageLevel(w.pct);
@@ -1905,6 +1907,28 @@ function renderConf() {
   });
   languageGrid.append(languageLabel, languageSelect);
   note(languageGrid, tr('언어는 즉시 적용하고 자동으로 저장합니다.'));
+
+  const startupGrid = card(tr('시작프로그램'));
+  const startupLabel = document.createElement('label');
+  startupLabel.htmlFor = 'run-at-startup';
+  startupLabel.textContent = tr('Windows 시작 시 자동 실행');
+  const startupSelect = document.createElement('select');
+  startupSelect.id = 'run-at-startup';
+  for (const [value, label] of [['false', tr('꺼짐')], ['true', tr('켜짐')]]) {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = label;
+    startupSelect.appendChild(option);
+  }
+  startupSelect.value = v.RunAtStartup === true ? 'true' : 'false';
+  startupSelect.addEventListener('change', () => {
+    const on = startupSelect.value === 'true';
+    v.RunAtStartup = on;
+    wv?.postMessage({ t: 'conf.startup', on });
+  });
+  startupGrid.append(startupLabel, startupSelect);
+  note(startupGrid, tr('바꾸는 즉시 현재 Windows 계정 시작프로그램에 반영됩니다. 로그인 시 창을 열고 이전 탭을 복원합니다.'));
+
   PetUI.render(card(tr('펫')).parentElement);
 
   // **여기서 CLI 를 고르지 않는다.** 어느 CLI 로 열지는 [＋ 새 대화] 를 누를 때마다 고른다.
@@ -2269,6 +2293,7 @@ function renderConf() {
   const bar = document.createElement('div');
   bar.style.cssText = 'display:flex;gap:8px;align-items:center;max-width:860px';
   const save = document.createElement('button');
+  save.id = 'conf-save';
   save.className = 'btn act';
   save.textContent = tr('저장');
   save.addEventListener('click', () => wv?.postMessage({ t: 'conf.save', v: CONF.settings }));
@@ -2477,6 +2502,11 @@ wv?.addEventListener('message', ev => {
 
     case 'ui.language':
       applyLanguage(m.language);
+      break;
+
+    case 'conf.startup.state':
+      if (CONF?.settings) CONF.settings.RunAtStartup = !!m.on;
+      if ($('run-at-startup')) $('run-at-startup').value = m.on ? 'true' : 'false';
       break;
 
     case 'conf.models.loading':

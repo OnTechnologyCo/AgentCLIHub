@@ -259,6 +259,118 @@ try
     Check(first.Title == "첫 질문" && first.When.ToUniversalTime() == DateTimeOffset.FromUnixTimeMilliseconds(2000).UtcDateTime,
         "Antigravity history groups conversation ID with first question and latest timestamp");
     Check(agHistory.All(s => s.Backend == "antigravity_cli" && s.Cwd == root && s.Account == ""), "Antigravity history retains workspace and CLI identity");
+
+    var agUsageSample = """
+        {"status":"SUCCESS","command":{"name":"usage","data":{"groups":[
+          {"name":"Claude and GPT models","buckets":[
+            {"id":"3p-weekly","name":"Weekly Limit Remaining","window":"weekly","remaining_fraction":0.10,"reset_time":"2026-11-19T13:09:53Z"},
+            {"id":"3p-5h","name":"Five Hour Limit Remaining","window":"5h","remaining_fraction":0.20,"reset_time":"2026-11-12T18:09:53Z"}
+          ]},
+          {"name":"Gemini Models","buckets":[
+            {"id":"gemini-weekly","name":"Weekly Limit Remaining","window":"weekly","remaining_fraction":0.56,"reset_time":"2026-11-19T13:02:42Z"},
+            {"id":"gemini-5h","name":"Five Hour Limit Remaining","window":"5h","remaining_fraction":0.9904,"reset_time":"2026-11-12T18:02:42Z"}
+          ]}
+        ]}}}
+        """;
+    var parsedAgUsage = UsageProbe.ParseAntigravity(agUsageSample)!;
+    Check(parsedAgUsage.Count == 2 &&
+          parsedAgUsage[0] == new UsageWindow("5h", 1, DateTimeOffset.Parse("2026-11-12T18:02:42Z").ToUnixTimeSeconds()) &&
+          parsedAgUsage[1] == new UsageWindow("주", 44, DateTimeOffset.Parse("2026-11-19T13:02:42Z").ToUnixTimeSeconds()),
+        "Antigravity usage parser selects Gemini group, converts remaining fraction to used percent, and orders 5h before weekly");
+
+    var freeAgUsage = UsageProbe.ParseAntigravity("""
+        {"command":{"name":"usage","data":{"groups":[{"name":"Gemini Models","buckets":[
+          {"id":"gemini-5h","window":"5h","disabled":true,"remaining_fraction":0},
+          {"id":"gemini-weekly","window":"weekly","remaining_fraction":0.25,"reset_time":"2026-11-19T00:00:00Z"}
+        ]}]}}}
+        """)!;
+    Check(freeAgUsage.Count == 1 && freeAgUsage[0].Label == "주" && freeAgUsage[0].Percent == 75,
+        "Antigravity usage parser omits disabled buckets and supports weekly-only tiers");
+    Check(UsageProbe.ParseAntigravity("{\"command\":{\"name\":\"credits\",\"data\":{\"remaining_credits\":0}}}") is null &&
+          UsageProbe.ParseAntigravity("not json") is null,
+        "Antigravity usage parser rejects non-usage payloads and malformed output");
+
+    var usageHits = FileAt("usage query/hits.txt", "");
+    var usageAuth = FileAt("usage query/authed.txt", "0");
+    var usageScript = FileAt("usage query/agy.ps1",
+        "[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false); " +
+        "Add-Content -LiteralPath '" + usageHits.Replace("'", "''") + "' -Value ($args -join ' '); " +
+        "if ($args -contains 'models') { if ((Get-Content -LiteralPath '" + usageAuth.Replace("'", "''") + "').Trim() -eq '1') { Write-Output \"gemini`tGemini\"; exit 0 } else { [Console]::Error.WriteLine('Error: Please sign in'); exit 1 } } " +
+        "Write-Output '{\"command\":{\"name\":\"usage\",\"data\":{\"groups\":[{\"name\":\"Gemini Models\",\"buckets\":[{\"id\":\"gemini-5h\",\"window\":\"5h\",\"remaining_fraction\":0.88,\"reset_time\":\"2026-11-12T18:00:00Z\"},{\"id\":\"gemini-weekly\",\"window\":\"weekly\",\"remaining_fraction\":0.65,\"reset_time\":\"2026-11-19T18:00:00Z\"}]}]}}}'; exit 0");
+    var usageCli = CliLocator.Locate(ag, usageScript);
+    var unauthDefault = await UsageProbe.AntigravityAsync(usageCli);
+    var hitLines = File.ReadAllLines(usageHits);
+    Check(unauthDefault is null && hitLines.Length == 1 && hitLines[0] == "models",
+        "unauthenticated default Antigravity stops at agy models without invoking --print /usage");
+    File.WriteAllText(usageAuth, "1");
+    var authDefault = await UsageProbe.AntigravityAsync(usageCli);
+    var secondAuth = await UsageProbe.AntigravityAsync(usageCli);
+    hitLines = File.ReadAllLines(usageHits);
+    Check(authDefault is { Count: 2 } && authDefault[0].Label == "5h" && authDefault[0].Percent == 12 &&
+          authDefault[1].Label == "주" && authDefault[1].Percent == 35 && secondAuth is { Count: 2 } &&
+          hitLines.Count(l => l == "models") == 2 && hitLines.Length == 4,
+        "authenticated Antigravity queries /usage JSON and skips redundant agy models checks");
+    var unauthExtra = await UsageProbe.AntigravityAsync(usageCli, "unlogged-extra-" + Guid.NewGuid().ToString("N"));
+    Check(unauthExtra is null && File.ReadAllLines(usageHits).Length == hitLines.Length,
+        "unauthenticated extra Antigravity account does not spawn CLI");
+
+    var liveAgUsage = await UsageProbe.AntigravityAsync(agResult);
+    if (agModels.Error is null && agModels.Models.Count > 0)
+    {
+        Check(liveAgUsage is { Count: > 0 } && liveAgUsage.Any(w => w.Label == "주") &&
+              liveAgUsage.All(w => w.Percent is >= 0 and <= 100 && w.ResetsAtUnix > 0),
+            "live installed agy returns Gemini weekly/5h usage: " + string.Join(", ", liveAgUsage!.Select(w => $"{w.Label}={w.Percent}%")));
+    }
+
+    var regRoot = @"Software\AgentCLIHub-StartupCheck-" + Guid.NewGuid().ToString("N");
+    var runSubKey = regRoot + @"\Run";
+    var approvedSubKey = regRoot + @"\StartupApproved\Run";
+    try
+    {
+        var startupExe = FileAt("startup dir/AgentCLIHub.exe", "stub");
+        var movedExe = FileAt("moved dir/AgentCLIHub.exe", "stub");
+        var otherExe = FileAt("moved dir/testhost.exe", "stub");
+        Check(!StartupRegistration.IsEnabled(runSubKey, approvedSubKey),
+            "startup registration defaults to disabled when Run value is absent");
+
+        StartupRegistration.SetEnabled(true, startupExe, runSubKey, approvedSubKey);
+        using (var rk = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(runSubKey))
+            Check(StartupRegistration.IsEnabled(runSubKey, approvedSubKey) &&
+                  (string?)rk?.GetValue(StartupRegistration.DefaultValueName) == $"\"{Path.GetFullPath(startupExe)}\"",
+                "enabling startup writes quoted executable path to HKCU Run");
+
+        using (var ak = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(approvedSubKey, writable: true))
+            ak.SetValue(StartupRegistration.DefaultValueName, new byte[] { 0x03, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }, Microsoft.Win32.RegistryValueKind.Binary);
+        Check(!StartupRegistration.IsEnabled(runSubKey, approvedSubKey),
+            "Task Manager StartupApproved odd-byte flag is respected as disabled");
+
+        StartupRegistration.SetEnabled(true, startupExe, runSubKey, approvedSubKey);
+        using (var ak = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(approvedSubKey))
+            Check(StartupRegistration.IsEnabled(runSubKey, approvedSubKey) &&
+                  ak?.GetValue(StartupRegistration.DefaultValueName) is null,
+                "re-enabling startup in settings clears prior StartupApproved suppression");
+
+        StartupRegistration.SyncExecutableIfEnabled(otherExe, runSubKey, approvedSubKey);
+        using (var rk = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(runSubKey))
+            Check((string?)rk?.GetValue(StartupRegistration.DefaultValueName) == $"\"{Path.GetFullPath(startupExe)}\"",
+                "non-app test host executable never overwrites startup path");
+
+        StartupRegistration.SyncExecutableIfEnabled(movedExe, runSubKey, approvedSubKey);
+        using (var rk = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(runSubKey))
+            Check((string?)rk?.GetValue(StartupRegistration.DefaultValueName) == $"\"{Path.GetFullPath(movedExe)}\"",
+                "SyncExecutableIfEnabled updates Run path when AgentCLIHub.exe moves");
+
+        StartupRegistration.SetEnabled(false, null, runSubKey, approvedSubKey);
+        using (var rk = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(runSubKey))
+            Check(!StartupRegistration.IsEnabled(runSubKey, approvedSubKey) &&
+                  rk?.GetValue(StartupRegistration.DefaultValueName) is null,
+                "disabling startup deletes Run value cleanly");
+    }
+    finally
+    {
+        Microsoft.Win32.Registry.CurrentUser.DeleteSubKeyTree(regRoot, throwOnMissingSubKey: false);
+    }
+
     TransferChecks.Run(root, Check);
     Console.WriteLine($"{passed} checks passed");
 }

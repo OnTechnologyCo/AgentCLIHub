@@ -317,6 +317,10 @@ public partial class MainWindow : Window
                 Post(new { t = "ui.language", language = languageSettings.UiLanguage });
                 break;
 
+            case "conf.startup":
+                SetStartupRegistration(m["on"]?.GetValue<bool>() ?? false);
+                break;
+
             // [＋ 새 대화] — 먼저 CLI 고르기 창에 줄 목록을 보낸다. 고른 뒤에는 tab.new 로 돌아온다.
             case "newchat.list":
                 PostNewChat();
@@ -1421,16 +1425,17 @@ public partial class MainWindow : Window
         Post(new { t = "conf.models.loading", request, path });
         try
         {
-            var result = await System.Threading.Tasks.Task.Run(async () =>
+            var (cliPath, result) = await System.Threading.Tasks.Task.Run(async () =>
             {
                 var cli = CliLocator.Locate(CliProfile.Antigravity, path);
-                return await AntigravityModels.ReadAsync(cli, token);
+                return (cli.Path, await AntigravityModels.ReadAsync(cli, token));
             }, token);
             if (token.IsCancellationRequested || request != _modelRequest) return;
             if (result.Error is null)
             {
                 _modelPath = path;
                 _antigravityModels = result.Models;
+                UsageProbe.MarkAntigravitySignedIn(cliPath);
             }
             Post(new { t = "conf.models", request,
                 models = result.Models.Select(m => m.Id).ToArray(),
@@ -1457,6 +1462,7 @@ public partial class MainWindow : Window
             {
                 // 어느 CLI 로 열지는 여기 없다 — [＋ 새 대화] 를 누를 때마다 고른다(PostNewChat).
                 Pet = c.Pet ?? new PetSettings(),
+                RunAtStartup = StartupRegistration.IsEnabled(),
                 c.UiLanguage, c.ClaudeModel, c.ClaudeEffort, c.CodexModel, c.CodexEffort,
                 c.ClaudeCodePermissionMode, c.CodexSandbox, c.CodexApproval,
                 c.ClaudeCliPath, c.CodexCliPath, c.AntigravityCliPath, c.AntigravityPermission,
@@ -1566,6 +1572,20 @@ public partial class MainWindow : Window
         c.GuardClaudeLogin = Flag(v?["GuardClaudeLogin"], c.GuardClaudeLogin);
         c.Save();
 
+        if (v?["RunAtStartup"] is not null)
+        {
+            var wantStartup = Flag(v["RunAtStartup"], StartupRegistration.IsEnabled());
+            if (wantStartup != StartupRegistration.IsEnabled())
+            {
+                try { StartupRegistration.SetEnabled(wantStartup); }
+                catch (Exception ex)
+                {
+                    Log(UiText.Pick($"시작프로그램 설정을 바꾸지 못했습니다 — {ex.Message}",
+                                    $"Could not update startup setting — {ex.Message}"), "e");
+                }
+            }
+        }
+
         // 새 값을 바로 건다. **쿠키는 안 되돌린다** — 위 주석 참조.
         ApplySignInSettings(c);
         ApplyPet();
@@ -1574,6 +1594,25 @@ public partial class MainWindow : Window
             "그 인자로 실행 중이라 바꿀 수 없습니다.", "i");
 
         PostConf();
+    }
+
+    private void SetStartupRegistration(bool enabled)
+    {
+        string? error = null;
+        try
+        {
+            StartupRegistration.SetEnabled(enabled);
+            Log(enabled
+                ? UiText.Pick("Windows 시작 시 자동 실행을 켰습니다.", "Enabled launch at Windows startup.")
+                : UiText.Pick("Windows 시작 시 자동 실행을 껐습니다.", "Disabled launch at Windows startup."), "i");
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+            Log(UiText.Pick($"시작프로그램 설정을 바꾸지 못했습니다 — {ex.Message}",
+                            $"Could not update startup setting — {ex.Message}"), "e");
+        }
+        Post(new { t = "conf.startup.state", on = StartupRegistration.IsEnabled(), error });
     }
 
     /// <summary>
@@ -1861,11 +1900,18 @@ public partial class MainWindow : Window
         var c = Settings.Load();
         var claude = CliProfile.Claude.Backend;
         var codex = CliProfile.Codex.Backend;
+        var antigravity = CliProfile.Antigravity.Backend;
+        var antigravityPath = c.AntigravityCliPath;
 
         System.Threading.Tasks.Task.Run(async () =>
             PostUsage(claude, "", await UsageProbe.ClaudeAsync()));
         System.Threading.Tasks.Task.Run(async () =>
             PostUsage(codex, "", await UsageProbe.CodexAccountAsync(CliProfile.CodexHome)));
+        System.Threading.Tasks.Task.Run(async () =>
+        {
+            var cli = CliLocator.Locate(CliProfile.Antigravity, antigravityPath);
+            PostUsage(antigravity, "", await UsageProbe.AntigravityAsync(cli));
+        });
 
         // 더 넣은 계정마다 따로. **넘길 곳을 고르는 자리에서 그 계정의 잔량이 보여야** 이 기능이 쓸모 있다.
         foreach (var a in c.Accounts)
@@ -1890,6 +1936,14 @@ public partial class MainWindow : Window
                 var home = Accounts.CodexHomeOf(id);
                 System.Threading.Tasks.Task.Run(async () =>
                     PostUsage(codex, id, await UsageProbe.CodexAccountAsync(home)));
+            }
+            else if (CliProfile.For(a.Backend) == CliProfile.Antigravity)
+            {
+                System.Threading.Tasks.Task.Run(async () =>
+                {
+                    var cli = CliLocator.Locate(CliProfile.Antigravity, antigravityPath);
+                    PostUsage(antigravity, id, await UsageProbe.AntigravityAsync(cli, id));
+                });
             }
         }
     }
