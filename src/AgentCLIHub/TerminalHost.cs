@@ -161,6 +161,33 @@ public sealed class TerminalHost : IDisposable
 
     public bool IsRunning => _pty?.IsRunning == true;
 
+    /// <summary>자식이 마지막으로 무언가 그린 시각. 원격(텔레그램)이 턴이 끝났는지 볼 때 쓴다.</summary>
+    public DateTime LastOutputUtc => _lastOut;
+
+    /// <summary>
+    /// 원격(텔레그램)에서 온 한 턴. **화면 입력창과 같은 길**(<see cref="SendTurn"/>)을 탄다 —
+    /// 대괄호 붙여넣기 뒤 화면이 잠잠해지면 Enter. 첨부는 이미 디스크에 내려받은 파일 경로다.
+    /// </summary>
+    public bool SendRemoteTurn(string text, IReadOnlyList<string> files, out string error)
+    {
+        error = "";
+        if (_pty is null || !_pty.IsRunning) { error = $"{Cli.Display} 가 떠 있지 않습니다."; return false; }
+        var arr = new JsonArray();
+        foreach (var f in files)
+            arr.Add(new JsonObject { ["kind"] = "file", ["path"] = f, ["name"] = System.IO.Path.GetFileName(f) });
+        SendTurn(text, arr);
+        return true;
+    }
+
+    /// <summary>원격에서 온 키 입력(Esc · Enter · 화살표 · 글자). 화면의 키 입력(term.in)과 같은 길이다.</summary>
+    public bool WriteKeys(string data)
+    {
+        var pty = _pty;
+        if (pty is null || !pty.IsRunning || data.Length == 0) return false;
+        pty.Write(data);
+        return true;
+    }
+
     /// <summary>화면에서 온 터미널 메시지. 처리했으면 true.</summary>
     public bool Handle(string type, JsonNode m)
     {

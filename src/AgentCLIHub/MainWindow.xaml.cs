@@ -149,6 +149,8 @@ public partial class MainWindow : Window
         }
         catch { /* 저장 실패가 종료를 막지 않는다 */ }
 
+        // 텔레그램을 먼저 끊는다 — 탭을 닫는 동안 들어온 질문이 죽어 가는 CLI 로 가면 안 된다.
+        StopTelegram();
         _bridge?.Dispose();
         foreach (var t in _tabs.Values) { try { t.Dispose(); } catch { } }
         // CLI가 종료 직전에 기록한 세션도 저장한다. 탭 목록을 비우기 전에 실행한다.
@@ -204,7 +206,10 @@ public partial class MainWindow : Window
             {
                 if (JsonNode.Parse(ev.WebMessageAsJson) is { } node)
                 {
-                    if (node["t"]?.GetValue<string>()?.StartsWith("pet.", StringComparison.Ordinal) == true &&
+                    // 펫·텔레그램 설정은 **우리 화면(index.html)에서 온 것만** 받는다 — 토큰을 바꾸거나
+                    // 페어링 코드를 만드는 메시지가 다른 출처에서 들어오면 안 된다.
+                    if (node["t"]?.GetValue<string>() is { } kind &&
+                        (kind.StartsWith("pet.", StringComparison.Ordinal) || kind.StartsWith("tg.", StringComparison.Ordinal)) &&
                         (!Uri.TryCreate(ev.Source, UriKind.Absolute, out var source) ||
                          source.Scheme != "https" || source.Host != Host || source.AbsolutePath != "/index.html")) return;
                     OnMessage(node);
@@ -226,6 +231,7 @@ public partial class MainWindow : Window
     {
         var t = m["t"]?.GetValue<string>() ?? "";
         if (t.StartsWith("pet.", StringComparison.Ordinal)) { HandlePetMessage(m); return; }
+        if (t.StartsWith("tg.", StringComparison.Ordinal)) { HandleTelegramMessage(m); return; }
 
         // 터미널 메시지는 **탭 번호로 갈라 보낸다.** 가장 자주 오고(키 입력마다 온다).
         // 모르는 번호면 아무 탭에나 흘리지 않는다 — 그러면 화면이 뒤섞인다.
@@ -284,6 +290,7 @@ public partial class MainWindow : Window
                 StartSessionWatch();
                 StartBridge();
                 StartStallWatch();
+                StartTelegram();
                 break;
 
             case "signin.clear":
@@ -1499,6 +1506,7 @@ public partial class MainWindow : Window
             }).ToList(),
             file = Settings.FilePath,
             version = AppVersion,
+            telegram = TelegramState(),
         });
         RefreshAntigravityModels(c.AntigravityCliPath);
     }

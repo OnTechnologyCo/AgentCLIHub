@@ -500,6 +500,19 @@ let confOn = false;
 function tab(id) { return TABS.get(id); }
 function cur() { return active ? TABS.get(active) : null; }
 
+// 텔레그램 원격(TelegramRemote)이 터미널 화면 글을 읽는 창구 — 호스트가 ExecuteScriptAsync 로 부른다.
+// **지금 화면만** 준다(baseY 기준, 스크롤백 제외). 승인 창과 마지막 답은 화면 아래에 있고,
+// 사용자가 위로 스크롤해 둔 탭이라도 실제 현재 화면을 읽어야 한다.
+window.agentRemote = {
+  screen(id) {
+    const t = TABS.get(id);
+    if (!t?.term) return null;
+    const b = t.term.buffer.active, out = [];
+    for (let i = 0; i < t.term.rows; i++) out.push(b.getLine(b.baseY + i)?.translateToString(true) ?? '');
+    return { text: out.join('\n'), focus: !!t.term.modes?.sendFocusMode };
+  },
+};
+
 // Codex 0.159.3 + ConPTY 에서는 입력이 없으면 진행 시간의 새 출력 자체가 멎는 경우가 있다.
 // xterm.refresh() 로는 고칠 수 없다. 포커스 알림을 보내면 CLI 가 현재 상태를 다시 출력한다.
 // CSI I 는 키 입력이 아닌 FocusIn 이다. ConPTY 가 포커스 보고(?1004h)를 요청한 경우에만,
@@ -2238,6 +2251,20 @@ function renderConf() {
     tr('**공용 PC 면 [유지 안 함] 으로 두세요** — 끄면 그 파일 자체가 안 생기고, 남아 있던 것도 지웁니다. \n') +
     tr('[비밀번호 저장] 을 꺼도 이미 저장된 것은 안 지워집니다 — 지우려면 위 단추를 쓰세요.'));
 
+  // ── 텔레그램 원격 ──────────────────────────────────
+  // **여기 단추도 누르는 즉시 일어난다**(아래 [저장] 과 무관하다) — 토큰 확인·페어링은 그 자리에서 끝나는 일이다.
+  const g8 = card(tr('텔레그램 원격'));
+  g8.id = 'tg-grid';
+  renderTelegram();
+  note(g8,
+    tr('텔레그램 봇으로 이 앱의 CLI 탭에 질문하고 답을 받습니다. 앱이 떠 있는 동안만 동작합니다.\n') +
+    tr('1) 텔레그램에서 @BotFather 에게 /newbot 을 보내 봇을 만들고, 받은 토큰을 위에 넣어 저장합니다.\n') +
+    tr('2) [사용] 을 켜고 [페어링 코드 만들기] 를 누른 뒤, 봇에게 /pair 코드 를 보냅니다.\n') +
+    tr('3) 봇에게 글을 보내면 고른 탭의 CLI 로 들어가고, 끝나면 답이 옵니다. /help 로 명령을 봅니다.\n\n') +
+    tr('**페어링한 대화는 이 PC 의 CLI 를 부릴 수 있습니다** — 승인 창은 텔레그램 단추로 오지만, 승인 없이 도는 권한 설정이면 \n') +
+    tr('파일 수정·명령 실행까지 원격에서 바로 일어납니다. 쓰지 않는 대화는 [×] 로 지우세요. \n') +
+    tr('토큰은 이 Windows 계정에 묶여 암호화됩니다(DPAPI). 이 PC 로 들어오는 포트는 열지 않습니다 — 텔레그램 서버에서 받아 옵니다.'));
+
   // ── 저장 ───────────────────────────────────────────
   const bar = document.createElement('div');
   bar.style.cssText = 'display:flex;gap:8px;align-items:center;max-width:860px';
@@ -2252,6 +2279,87 @@ function renderConf() {
   m.textContent = tr('저장한 값은 다음에 여는 대화부터 적용됩니다.');
   bar.appendChild(m);
   box.appendChild(bar);
+}
+
+// 텔레그램 원격 칸. 상태가 바뀔 때마다(tg.state) **이 칸만** 다시 그린다 — 설정 전체를 다시 그리면
+// 다른 칸에서 치던 글자와 스크롤 자리가 날아간다.
+let tgTimer = 0;
+function renderTelegram() {
+  const g = document.getElementById('tg-grid');
+  if (!g || !CONF) return;
+  const s = CONF.telegram || {};
+  g.replaceChildren();
+  clearTimeout(tgTimer);
+
+  const label = text => { const l = document.createElement('label'); l.textContent = text; return l; };
+  const span = (text, color) => {
+    const e = document.createElement('span');
+    e.textContent = text; e.style.fontSize = '12px';
+    if (color) e.style.color = color;
+    return e;
+  };
+  const button = (text, title, fn, cls = 'btn') => {
+    const b = document.createElement('button');
+    b.className = cls; b.textContent = text;
+    if (title) b.title = title;
+    b.addEventListener('click', fn);
+    return b;
+  };
+  const row = (text, ...els) => {
+    const d = document.createElement('div');
+    d.className = 'row2';
+    d.style.cssText = 'align-items:center;flex-wrap:wrap';
+    d.append(...els);
+    g.append(label(text), d);
+    return d;
+  };
+
+  let status, color = '#99a';
+  if (!s.hasToken) status = tr('토큰 없음');
+  else if (!s.enabled) status = tr('꺼짐');
+  else if (s.error) { status = s.error; color = '#e88'; }
+  else if (s.connected) { status = tr('연결됨') + (s.bot ? ' · @' + s.bot : ''); color = '#8FD8A8'; }
+  else status = tr('연결하는 중…');
+  row(tr('상태'), span(status, color));
+
+  const on = document.createElement('select');
+  [['true', tr('켜짐')], ['false', tr('꺼짐')]].forEach(([val, txt]) => {
+    const o = document.createElement('option');
+    o.value = val; o.textContent = txt;
+    on.appendChild(o);
+  });
+  on.value = s.enabled ? 'true' : 'false';
+  on.addEventListener('change', () => wv?.postMessage({ t: 'tg.enable', on: on.value === 'true' }));
+  g.append(label(tr('사용')), on);
+
+  const tok = document.createElement('input');
+  tok.type = 'password'; tok.autocomplete = 'off'; tok.spellcheck = false;
+  tok.placeholder = s.hasToken ? s.token + ' ' + tr('(저장됨 — 바꾸려면 새로 넣기)') : tr('BotFather 가 준 토큰 (123456:ABC…)');
+  tok.style.cssText = 'flex:1;min-width:220px';
+  const save = () => { const v = tok.value.trim(); tok.value = ''; if (v) wv?.postMessage({ t: 'tg.token', token: v }); };
+  tok.addEventListener('keydown', e => { if (e.key === 'Enter') save(); });
+  const tokRow = row(tr('봇 토큰'), tok, button(tr('저장'), tr('토큰을 확인하고 암호화해 저장합니다'), save, 'btn act'));
+  if (s.hasToken) tokRow.append(button(tr('지우기'), tr('저장된 토큰을 지웁니다'), () => wv?.postMessage({ t: 'tg.token.clear' })));
+  if (s.note) row('', span(s.note, '#cde'));
+
+  const pair = row(tr('페어링'));
+  if (s.pairCode && s.pairUntil > Date.now()) {
+    const left = Math.max(1, Math.ceil((s.pairUntil - Date.now()) / 60000));
+    const code = span(s.pairCode, '#ffd27a');
+    code.style.cssText += ';font-family:Consolas,monospace;font-size:15px;letter-spacing:1px;user-select:all';
+    pair.append(code, span(tr`봇에게 /pair ${s.pairCode} 를 보내세요 — ${left}분 남음`));
+    tgTimer = setTimeout(renderTelegram, 30000);   // 남은 시간을 고쳐 쓰고, 지나면 코드를 지운다
+  }
+  const mk = button(tr('페어링 코드 만들기'), tr('10분 동안 쓸 수 있는 한 번용 코드를 만듭니다'), () => wv?.postMessage({ t: 'tg.pair' }));
+  mk.disabled = !s.running;
+  pair.append(mk);
+
+  const chats = s.chats || [];
+  if (!chats.length) row(tr('허용된 대화'), span(tr('없음 — 페어링한 대화만 봇을 쓸 수 있습니다'), '#6b7684'));
+  chats.forEach((c, i) => {
+    const r = row(i === 0 ? tr('허용된 대화') : '', span((c.name || tr('(이름 없음)')) + ' · ' + c.id));
+    r.append(button('×', tr('이 대화의 허용을 거둡니다'), () => wv?.postMessage({ t: 'tg.chat.remove', id: c.id })));
+  });
 }
 
 function applyLanguage(value) {
@@ -2358,7 +2466,8 @@ wv?.addEventListener('message', ev => {
 
     case 'conf':
       CONF = { settings: m.settings, catalog: m.catalog, detect: m.detect, file: m.file,
-               accounts: m.accounts || [], version: m.version || '', modelsPath: m.settings?.AntigravityCliPath || '' };
+               accounts: m.accounts || [], version: m.version || '', modelsPath: m.settings?.AntigravityCliPath || '',
+               telegram: m.telegram || null };
       PetUI.apply(m.settings?.Pet);
       applyLanguage(m.settings?.UiLanguage || 'ko');
       renderSites();
@@ -2532,6 +2641,10 @@ wv?.addEventListener('message', ev => {
       USAGE[ukey(m.backend, m.account)] = m.windows || [];
       renderUsage();
       if (swapIsOn()) renderSwap();     // 고르는 중에 잔량이 오면 바로 비춘다
+      break;
+
+    case 'tg.state':
+      if (CONF) { CONF.telegram = m.state; renderTelegram(); }
       break;
 
     case 'log': log(m.msg, m.level); break;

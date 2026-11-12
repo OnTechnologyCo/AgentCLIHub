@@ -405,3 +405,44 @@ Other commands include `pet set location desktop|app`,
 `pet set size 100`, and `pet set visible on|off`. Image creation uses the agent's available tools; no image generation model is bundled.
 
 Checks: `dotnet run --project tests/PetChecks/PetChecks.csproj -- --ui`, `--web` and `node tests/pet_format_checks.cjs`.
+
+## Telegram remote (1.9.5)
+
+Ask this app's CLI tabs questions from a Telegram bot and get the answers back. It works only while the app is running.
+The bot fetches messages from Telegram's servers (long polling), so **no inbound port is opened on this PC** — no router or firewall changes.
+
+Settings → **Telegram remote**
+
+1. In Telegram, send `/newbot` to @BotFather, then paste the token into **Bot token** and save it.
+   The token is verified with `getMe` before saving and stored DPAPI-encrypted for this Windows account in `telegram-token.dat` (never in settings.json).
+2. Turn **Enabled** on and press **Create pairing code**. The code is single-use and valid for 10 minutes.
+3. Send `/pair CODE` to the bot in a private chat. The chat appears under **Allowed chats** and can be revoked at once with [×].
+
+| Command | What it does |
+| --- | --- |
+| (plain text) | Sent to the selected tab's CLI as one turn. Photos and files can be attached |
+| `/tabs` | List open CLI tabs with selection buttons |
+| `/use N` | Choose the tab for questions (automatic when only one is open) |
+| `/new [folder] [claude\|codex\|antigravity]` | Open a tab. Without a folder, recent folders are offered as buttons |
+| `/screen` | Current terminal screen |
+| `/esc` · `/enter` · `/key text` | Send Esc · Enter · text without Enter |
+| `/status` | Selected tab and progress |
+
+- Text takes the same path as the input box (bracketed paste + Enter). Unknown `/commands` (`/compact`, …) go to the CLI;
+  for a CLI command with the same name as a bot command, use two slashes, e.g. `//help`.
+- Photos and files are downloaded into the tab's `.agentclihub-attachments\telegram\` folder and attached by path (Telegram bot limit: 20 MB).
+- While working, one message is updated with recent tool calls (last 8) and elapsed time. When done, the **text after the last tool call**
+  of this turn is sent from the session transcript (jsonl). Long answers are split.
+- Completion requires all three: 2.5 s without terminal output, no `esc to interrupt` on screen, and the transcript's last item being answer text.
+  If no transcript is found, the screen text is sent after 15 s.
+- Approval/choice prompts (numbered lists with a `❯`/`›` cursor) arrive with the screen excerpt and option buttons. Pressing a button
+  **re-checks that the same prompt is still on screen**, then selects it with arrow keys + Enter; if the screen changed, nothing is chosen.
+- Only private chats are accepted (groups/channels are ignored). Messages queued while the app was closed (older than 60 s before start) are not run;
+  the chat is told once. Pairing codes are single-use and invalidated after 5 wrong attempts. Unpaired chats only get a pairing hint, at most every 10 minutes.
+- Tabs opened with `/new` use the default account. Running the same bot on two PCs makes Telegram reject one of them (409) — enable it in one place only.
+
+**Caution**: a paired chat can drive the CLIs on this PC. Approval prompts come to Telegram as buttons, but with a no-approval permission setting
+file edits and commands run remotely right away. Revoke chats you no longer use.
+
+Checks: `dotnet run --project tests/TelegramChecks/TelegramChecks.csproj`. A fake Bot API and fake app cover pairing, question to final answer,
+approval buttons, stale-message blocking and revocation. No real Telegram, settings file or CLI is used.
