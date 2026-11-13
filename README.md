@@ -114,8 +114,8 @@ Windows 도구 실행에 필요한 Git Bash 는 설치된 Git 의 `bin` 경로�
   다른 CLI에서 인계받은 탭은 인계 파일을 전달했던 세션을 찾아 복원한다.
 * 1.7.0부터 탭 우클릭의 **다른 CLI·계정으로 이어가기**에서 Claude/Codex와 양방향으로 대화를 옮긴다.
   Antigravity로 넘길 때는 설정에서 선택한 모델로 인계 파일을 읽고, 확인 답변 뒤 다음 요청을 기다린다.
-* 설정 → 계정에서 Antigravity 계정을 추가할 수 있다. 터미널의 Google 로그인 안내를 따르고 완료 후 `/exit`로 종료한다. 사용량은 각 CLI의 `/usage`에서 확인한다.
-  브라우저 조작 안내문 자동 주입은 Claude/Codex 에만 적용된다.
+* 설정 → 계정에서 Antigravity 계정을 추가할 수 있다. 터미널의 Google 로그인 안내를 따르고 완료 후 `/exit`로 종료한다. 사용량은 하단 사용량 줄(`Gemini`)과 각 CLI의 `/usage`에서 확인한다.
+  내장 브라우저·펫·앱 설정 제어 안내는 `~/.gemini/config/skills/agentclihub/SKILL.md` 전역 스킬로 제공된다.
 
 공식 안내: [설치·로그인](https://www.antigravity.google/docs/cli/install/),
 [이어하기](https://www.antigravity.google/docs/cli/commands/resume/).
@@ -720,3 +720,29 @@ Codex·Claude 새 대화에는 제작 규격과 등록 명령을 내부 지침�
 
 검사: `dotnet run --project tests/ScheduleChecks/ScheduleChecks.csproj`. cron·다음 실행 계산과 검증, 가짜 시계·가짜 앱으로 1분 실행·
 겹침 시 한 번만 이어 돌기·지금 실행·끈 작업·없는 탭·새 탭 열고 닫기·한 번 작업·승인 창 알림까지 확인한다.
+
+## 시스템 트레이 및 LLM 설정 제어 (1.9.8)
+
+### 시스템 트레이
+
+시계 옆 작업 표시줄 알림 영역(시스템 트레이) 아이콘으로 상주하며, 트레이에 숨겨진 동안에도 열린 CLI 탭·예약 작업·텔레그램 원격·에이전트 창구가 백그라운드에서 계속 동작한다.
+
+설정 → **시작프로그램 · 트레이**
+
+- **시작 시 표시 방식** (`StartInTray`): **항상 트레이 아이콘으로 시작**(기본값) · **Windows 자동 실행 시에만 트레이로 시작**(`--startup`) · **일반 창으로 시작** 중 선택한다.
+- **닫기(×) 버튼 동작** (`CloseToTray`): **트레이 아이콘으로 숨기기**(기본값) · **프로그램 종료** 중 선택한다. 트레이 아이콘으로 숨기기가 켜져 있을 때는 트레이 우클릭 메뉴의 **종료** 또는 Windows 로그오프/종료 시 완전히 종료된다.
+- 이미 실행 중일 때 바로가기를 다시 실행하면 새 창을 띄우지 않고 기존 창을 앞으로 깨운다.
+- **트레이 아이콘 조작**: 좌클릭·더블클릭으로 창을 열고, 우클릭 메뉴에서 **창 열기/앞으로 가져오기**, **트레이로 숨기기**, **＋ 새 대화…**, **↻ 지난 대화 이어하기…**, **열린 탭 바로 전환**, **브라우저 바로가기**, **⚙ 설정 열기**, 빠른 토글(**펫 표시** · **텔레그램 원격** · **닫기(×) 시 트레이로 숨기기** · **Windows 시작 시 자동 실행**), **종료**를 바로 실행한다.
+
+### 각 LLM에서 설정 화면 확인·수정·저장
+
+앱 탭 안에서 실행되는 **Claude Code · Codex · Antigravity(`agy`)** 세 CLI 모두 `AGENTCLIHUB_BROWSER_CLI` 의 `settings`(별칭 `config`) 명령으로 `[⚙ 설정]` 화면의 항목을 조회·검증·저장할 수 있다. 변경 사항은 `settings.json` 과 시작프로그램 레지스트리, 트레이 아이콘, 열려 있는 `[⚙ 설정]` 화면에 즉시 반영되며, 비밀번호·텔레그램 봇 토큰·OAuth 토큰 원문은 응답에 노출되지 않는다.
+
+```powershell
+& $env:AGENTCLIHUB_BROWSER_CLI settings get
+& $env:AGENTCLIHUB_BROWSER_CLI settings set StartInTray startup
+& $env:AGENTCLIHUB_BROWSER_CLI settings set CloseToTray true
+& $env:AGENTCLIHUB_BROWSER_CLI settings patch '{"CodexModel":"gpt-5.4","CodexEffort":"high"}'
+& $env:AGENTCLIHUB_BROWSER_CLI settings bookmark list
+& $env:AGENTCLIHUB_BROWSER_CLI settings schedule list
+```

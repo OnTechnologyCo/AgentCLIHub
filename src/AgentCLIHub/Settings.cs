@@ -125,6 +125,29 @@ public sealed class Settings
     public static string NormalizeLanguage(string? value) =>
         string.Equals(value, "en", StringComparison.OrdinalIgnoreCase) ? "en" : "ko";
 
+    private string _startInTray = "always";
+    /// <summary>
+    /// 앱을 켤 때 창 대신 작업 표시줄 트레이 아이콘으로 시작할까.
+    /// <c>always</c> = 항상 트레이로 시작(기본값), <c>startup</c> = Windows 자동 실행(<c>--startup</c>)일 때만 트레이로 시작,
+    /// <c>never</c> = 항상 일반 창으로 시작.
+    /// </summary>
+    public string StartInTray
+    {
+        get => _startInTray;
+        set => _startInTray = NormalizeStartInTray(value);
+    }
+
+    public static string NormalizeStartInTray(string? value) =>
+        (value ?? "").Trim().ToLowerInvariant() switch
+        {
+            "startup" => "startup",
+            "never" or "false" or "off" or "window" => "never",
+            _ => "always",
+        };
+
+    /// <summary>창의 닫기(×) 버튼을 눌렀을 때 종료하는 대신 트레이 아이콘으로 숨길까.</summary>
+    public bool CloseToTray { get; set; } = true;
+
     /// <summary>
     /// 마지막으로 [＋ 새 대화] 에서 고른 CLI. <c>claude_code</c> · <c>codex_cli</c>.
     ///
@@ -339,13 +362,15 @@ public sealed class Settings
     };
 
     /// <summary>읽는다. 파일이 깨졌으면 기본값으로 떨어진다 — 설정 하나 때문에 앱이 안 뜨면 안 된다.</summary>
-    public static Settings Load()
+    public static Settings Load() => LoadFrom(FilePath);
+
+    public static Settings LoadFrom(string filePath)
     {
         try
         {
-            if (File.Exists(FilePath))
+            if (File.Exists(filePath))
             {
-                var s = JsonSerializer.Deserialize<Settings>(File.ReadAllText(FilePath)) ?? new Settings();
+                var s = JsonSerializer.Deserialize<Settings>(File.ReadAllText(filePath)) ?? new Settings();
                 s.Pet ??= new(); s.Pet.Normalize();
                 s.Telegram ??= new(); s.Telegram.Chats ??= [];
                 s.Schedules ??= [];
@@ -361,12 +386,15 @@ public sealed class Settings
         return new Settings();
     }
 
-    public void Save()
+    public void Save() => SaveTo(FilePath);
+
+    public void SaveTo(string filePath)
     {
         try
         {
-            Directory.CreateDirectory(DataDir);
-            File.WriteAllText(FilePath, JsonSerializer.Serialize(this, _opt),
+            var dir = Path.GetDirectoryName(filePath);
+            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+            File.WriteAllText(filePath, JsonSerializer.Serialize(this, _opt),
                               new System.Text.UTF8Encoding(false));
         }
         catch { /* 저장 실패가 실행을 막지 않는다 — 이번 세션은 메모리 값으로 계속 돈다 */ }

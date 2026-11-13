@@ -699,6 +699,58 @@ class TerminalWakeTests(unittest.TestCase):
         self.history_choices()
         self.assertFalse(self.page.locator("#swap").is_visible())
 
+    def test_tray_settings_and_host_tray_actions_work_end_to_end(self):
+        self.open_terminal("cx")
+        self.page.locator("#tab-conf").click()
+        self.antigravity_config()
+        self.assertEqual(self.page.locator("#start-in-tray").input_value(), "always")
+        self.assertEqual(self.page.locator("#close-to-tray").input_value(), "true")
+
+        self.page.locator("#start-in-tray").select_option("startup")
+        tray_msg = self.page.evaluate("sent.filter(m => m.t === 'conf.tray').at(-1)")
+        self.assertEqual((tray_msg["startInTray"], tray_msg["closeToTray"]), ("startup", True))
+
+        self.page.locator("#close-to-tray").select_option("false")
+        tray_msg2 = self.page.evaluate("sent.filter(m => m.t === 'conf.tray').at(-1)")
+        self.assertEqual((tray_msg2["startInTray"], tray_msg2["closeToTray"]), ("startup", False))
+
+        # Tray context menu toggle updates UI without clobbering settings scroll/drafts
+        self.message(t="conf.tray.state", startInTray="never", closeToTray=True)
+        self.assertEqual(self.page.locator("#start-in-tray").input_value(), "never")
+        self.assertEqual(self.page.locator("#close-to-tray").input_value(), "true")
+
+        # Live conf push from LLM settings command updates open [⚙ Settings] screen
+        self.message(t="conf", file="test-settings.json", version="1.9.8", settings={
+            "AntigravityCliPath": "", "CodexCliPath": "keep-codex", "ClaudeCliPath": "keep-claude",
+            "AntigravityModel": "", "AntigravityEffort": "high", "AntigravityPermission": "",
+            "StartInTray": "always", "CloseToTray": False, "Bookmarks": [], "UiLanguage": "ko"},
+            catalog={"antigravity_cli": {
+                "display": "Antigravity", "memoryFile": "AGENTS.md / GEMINI.md", "models": [],
+                "modelsComplete": False, "modelKey": "AntigravityModel", "effortKey": "AntigravityEffort",
+                "pathKey": "AntigravityCliPath", "efforts": ["low", "medium", "high", "max"],
+                "supportsAccounts": True, "supportsTransfer": True, "perm": []}},
+            accounts=[], detect={})
+        self.assertEqual(self.page.locator("#start-in-tray").input_value(), "always")
+        self.assertEqual(self.page.locator("#close-to-tray").input_value(), "false")
+
+        # Tray menu commands: ui.newchat, hist.open, conf.open, win.shown
+        self.page.evaluate("showTab('cx')")
+        self.clear_messages()
+        self.message(t="ui.newchat")
+        self.assertTrue(self.page.evaluate("sent.some(m => m.t === 'newchat.list')"))
+
+        self.message(t="hist.open")
+        self.assertTrue(self.page.locator("#hist").is_visible())
+
+        self.message(t="conf.open")
+        self.assertFalse(self.page.locator("#hist").is_visible())
+        self.assertTrue(self.page.locator("#conf").is_visible())
+
+        self.page.evaluate("showTab('cx')")
+        self.message(t="win.shown")
+        self.page.clock.run_for(100)
+        self.assertEqual(self.page.evaluate("active"), "cx")
+
 
 if __name__ == "__main__":
     unittest.main()

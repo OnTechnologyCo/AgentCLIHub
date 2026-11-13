@@ -23,7 +23,7 @@
     <Product>AgentCLIHub</Product>
     <Title>AgentCLIHub</Title>
     <Description>Unified workspace for AI coding agent CLIs.</Description>
-    <Version>1.9.7</Version>
+    <Version>1.9.8</Version>
 
     <!-- 탐색기·작업 표시줄에 붙는 실행 파일 아이콘. -->
     <ApplicationIcon>app.ico</ApplicationIcon>
@@ -35,6 +35,7 @@
        실수로 WinForms 쪽 MessageBox 를 집어 드는 일도 없다. -->
   <ItemGroup>
     <Using Remove="System.Windows.Forms" />
+    <InternalsVisibleTo Include="HostChecks" />
   </ItemGroup>
 
   <ItemGroup>

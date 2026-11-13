@@ -467,8 +467,12 @@ public sealed class TerminalHost : IDisposable
                                  : Accounts.ClaudeModeOf(Account) is ClaudeMode.Login or ClaudeMode.Token);
         if (Cli.Kind == CliKind.Codex && Account.Length > 0) Accounts.PrepareCodexHome(CodexHome, _log);
         if (claudeDir) Accounts.PrepareClaudeHome(ClaudeHome, _log);
-        if (Cli.Kind == CliKind.Antigravity && Account.Length > 0)
-            System.IO.Directory.CreateDirectory(AntigravityAccounts.ProfileOf(Account));
+        if (Cli.Kind == CliKind.Antigravity)
+        {
+            var agyProfile = AntigravityAccounts.ProfileOf(Account);
+            if (Account.Length > 0) System.IO.Directory.CreateDirectory(agyProfile);
+            AgentBrief.WriteAntigravityProfile(agyProfile);
+        }
 
         if (!IsLogin && Cli.Kind == CliKind.Claude && resume.SessionId is { Length: > 0 } resumeId)
         {

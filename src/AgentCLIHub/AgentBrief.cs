@@ -39,13 +39,21 @@ public static class AgentBrief
     public static string CodexFileIn(string home) => Path.Combine(home, CodexProfile + ".config.toml");
 
     /// <summary>
+    /// Antigravity CLI(<c>agy</c>)가 전역 스킬로 자동 발견하는 <c>SKILL.md</c> 경로.
+    /// <c>agy</c> 는 <c>--append-system-prompt-file</c> 옵션이 없으므로, progressive disclosure 스킬로
+    /// 이름·설명만 올리고 사용자가 브라우저·펫·설정 조작을 요청할 때 본문을 읽게 한다.
+    /// </summary>
+    public static string AntigravitySkillIn(string profile) =>
+        Path.Combine(profile, ".gemini", "config", "skills", "agentclihub", "SKILL.md");
+
+    /// <summary>
     /// 쪽지를 얹을까. 창구가 안 열렸으면 **안 얹는다** — 못 쓰는 도구를 있다고 알리면
     /// 에이전트가 그것을 부르다 실패하는 데 시간을 쓴다.
     /// </summary>
     public static bool Ready { get; private set; }
 
     /// <summary>
-    /// 두 파일을 쓴다. 앱이 뜰 때 한 번 부른다.
+    /// 세 CLI 용 안내 파일을 쓴다. 앱이 뜰 때 한 번 부른다.
     /// 실패해도 던지지 않는다 — 쪽지를 못 써서 앱이 안 뜨면 안 된다.
     /// </summary>
     public static void Write()
@@ -58,6 +66,7 @@ public static class AgentBrief
             File.WriteAllText(ClaudeFile, body, new UTF8Encoding(false));
 
             WriteCodexFile(CliProfile.CodexHome, body);
+            WriteAntigravitySkillFile(AntigravityAccounts.ProfileOf(""), body);
 
             Ready = true;
         }
@@ -74,6 +83,47 @@ public static class AgentBrief
         try { WriteCodexFile(home, Text()); }
         catch { /* 못 쓰면 그 홈에서는 -p 를 안 건다(CliProfile 이 파일이 있는지 본다) */ }
     }
+
+    /// <summary>
+    /// Antigravity 계정 프로필 홈에도 전역 스킬(<c>.gemini/config/skills/agentclihub/SKILL.md</c>)을 쓴다.
+    /// </summary>
+    public static void WriteAntigravityProfile(string profile)
+    {
+        if (!Ready) return;
+        try { WriteAntigravitySkillFile(profile, Text()); }
+        catch { }
+    }
+
+    internal static void WriteAntigravitySkillFile(string profile, string? body = null)
+    {
+        var file = AntigravitySkillIn(profile);
+        var dir = Path.GetDirectoryName(file)!;
+        Directory.CreateDirectory(dir);
+        var text = AntigravitySkillContent(body ?? Text());
+        var old = File.Exists(file) ? File.ReadAllText(file) : null;
+        if (text == old) return;
+
+        var tmp = file + ".agentclihub.tmp";
+        File.WriteAllText(tmp, text, new UTF8Encoding(false));
+        File.Move(tmp, file, overwrite: true);
+    }
+
+    internal static string AntigravitySkillContent(string body) =>
+        ("""
+        ---
+        name: agentclihub
+        description: >-
+          Control the AgentCLIHub host app from inside an AgentCLIHub terminal tab:
+          inspect, modify, and save [⚙ Settings] (language, startup, system tray,
+          Claude/Codex/Antigravity models, reasoning effort, permissions, CLI paths,
+          bookmarks, accounts, sign-in options, desktop/app pet, Telegram remote,
+          and scheduled cron tasks), control the built-in logged-in browser tabs,
+          and manage custom pet sprite sheets via AGENTCLIHUB_BROWSER_CLI.
+        ---
+
+        > **실행 조건**: 이 스킬의 명령은 `AGENTCLIHUB_BROWSER_PIPE` 와 `AGENTCLIHUB_BROWSER_CLI` 환경변수가 설정된 **AgentCLIHub 앱 내부 터미널 탭**에서만 동작합니다. 일반 외부 터미널에서 실행 중이면 해당 환경변수가 없으므로 이 도구를 호출하지 마세요.
+
+        """ + "\n" + body.Trim() + "\n").Replace("\r\n", "\n");
 
     /// <summary>
     /// 그 홈의 프로필 파일을 쓴다. **codex 가 거기 적어 둔 것은 살린다** — 쪽지(<c>developer_instructions</c>)만 바꾼다.
@@ -330,10 +380,10 @@ public static class AgentBrief
     /// 쪽지 본문. **할 수 있는 것과 못 하는 것을 같이 적는다** — 못 하는 것을 안 적으면
     /// 클릭·입력을 시키려다 실패하고, 그 실패의 이유가 에이전트에게 안 보인다.
     /// </summary>
-    private static string Text()
+    internal static string Text()
     {
         var exe = BrowserBridge.HelperPath;
-        return $"""
+        return $$"""
             ## 이 세션에서 쓸 수 있는 브라우저
 
             지금 이 CLI 는 AgentCLIHub 창의 탭 안에서 돌고 있다. 같은 창에 브라우저 탭이 있고,
@@ -341,7 +391,7 @@ public static class AgentBrief
             아래 명령으로 그 브라우저를 부릴 수 있다. 로그인·토큰을 따로 구할 필요가 없다.
 
             ```
-            "{exe}" <명령> [인자…]
+            "{{exe}}" <명령> [인자…]
             ```
 
             | 명령 | 하는 일 |
@@ -459,6 +509,58 @@ public static class AgentBrief
             앱 검사는 그림 내용의 동작 의미까지 판정하지 않으므로 직접 프레임을 시각적으로 검토하라.
             바탕화면 모드는 앱 밖 이동·다른 창 위 표시·최소화 중 표시를 지원하고 앱 종료 시 닫힌다.
             작업 중 표시는 CLI 입출력 활동이며 실제 LLM 완료나 승인 상태의 확정 판정은 아니다.
+
+            ## 앱 설정 화면([⚙ 설정]) 조회·수정·저장 — 에이전트 내부 사용법
+
+            사용자가 AgentCLIHub 의 설정 확인·변경·저장을 요청하면 `settings.json` 파일을 직접 편집하지 말고
+            반드시 아래 `settings`(별칭 `config`) 명령을 사용하라. 앱이 허용 값 검증, 파일 저장, 시작프로그램
+            레지스트리 반영, 트레이 아이콘·열려 있는 `[⚙ 설정]` 화면 실시간 동기화까지 즉시 처리한다.
+            (비밀번호·텔레그램 봇 토큰·OAuth 토큰 원문은 응답에 노출되지 않으며 마스킹 상태만 반환된다.)
+
+            ~~~powershell
+            # 1) 현재 설정·허용 선택지(choices)·카탈로그·탐지 상태 조회
+            & $env:AGENTCLIHUB_BROWSER_CLI settings get
+            # 구역별 조회: all | ui | startup | tray | cli | bookmarks | signin | accounts | pet | telegram | schedules
+            & $env:AGENTCLIHUB_BROWSER_CLI settings get tray
+            & $env:AGENTCLIHUB_BROWSER_CLI settings get cli
+
+            # 2) 단일 항목 수정 및 즉시 저장 (기본값 복원은 'default' 또는 빈 값, 실행 파일 자동 탐색은 'auto')
+            & $env:AGENTCLIHUB_BROWSER_CLI settings set UiLanguage ko              # ko | en
+            & $env:AGENTCLIHUB_BROWSER_CLI settings set RunAtStartup true          # true | false (Windows 시작프로그램 즉시 반영)
+            & $env:AGENTCLIHUB_BROWSER_CLI settings set StartInTray always         # always | startup | never
+            & $env:AGENTCLIHUB_BROWSER_CLI settings set CloseToTray true           # true | false (닫기 × 시 트레이 숨김)
+            & $env:AGENTCLIHUB_BROWSER_CLI settings set ClaudeModel sonnet
+            & $env:AGENTCLIHUB_BROWSER_CLI settings set ClaudeEffort high
+            & $env:AGENTCLIHUB_BROWSER_CLI settings set ClaudeCodePermissionMode acceptEdits
+            & $env:AGENTCLIHUB_BROWSER_CLI settings set CodexModel gpt-5.4
+            & $env:AGENTCLIHUB_BROWSER_CLI settings set CodexEffort high
+            & $env:AGENTCLIHUB_BROWSER_CLI settings set CodexSandbox workspace-write
+            & $env:AGENTCLIHUB_BROWSER_CLI settings set CodexApproval on-request
+            & $env:AGENTCLIHUB_BROWSER_CLI settings set AntigravityModel gemini-2.5-pro
+            & $env:AGENTCLIHUB_BROWSER_CLI settings set AntigravityEffort high
+            & $env:AGENTCLIHUB_BROWSER_CLI settings set AntigravityPermission auto
+            & $env:AGENTCLIHUB_BROWSER_CLI settings set ClaudeCliPath auto         # CodexCliPath / AntigravityCliPath 동일
+            & $env:AGENTCLIHUB_BROWSER_CLI settings set GuardClaudeLogin true      # KeepSignedIn / SavePasswords 동일
+
+            # 3) 여러 항목 일괄 수정·저장 (JSON 문자열 또는 --file 경로)
+            & $env:AGENTCLIHUB_BROWSER_CLI settings patch '{"StartInTray":"always","CloseToTray":true,"CodexEffort":"high"}'
+            & $env:AGENTCLIHUB_BROWSER_CLI settings patch --file 'D:\작업\patch.json'
+
+            # 4) 창·트레이 및 [⚙ 설정] 화면 제어
+            & $env:AGENTCLIHUB_BROWSER_CLI settings open                           # 창을 앞으로 가져오고 [⚙ 설정] 화면 열기
+            & $env:AGENTCLIHUB_BROWSER_CLI settings window status                  # status | show | hide | settings
+            & $env:AGENTCLIHUB_BROWSER_CLI settings models-refresh                 # Antigravity 모델 목록 새로고침
+
+            # 5) 브라우저 바로가기(북마크) · 계정 · 텔레그램 · 예약 작업 관리
+            & $env:AGENTCLIHUB_BROWSER_CLI settings bookmark list                  # add <이름> <주소> [show] | update <순번> <이름> <주소> [show] | move <순번> <목표순번|up|down> | remove <순번>
+            & $env:AGENTCLIHUB_BROWSER_CLI settings account list                   # rename <id|default:CLI> <새이름> | add <cli> <이름> [sso|console] | login <id> | remove <id>
+            & $env:AGENTCLIHUB_BROWSER_CLI settings telegram status                # enable <on|off> | set-token <토큰> | clear-token | pair | revoke <chatId>
+            & $env:AGENTCLIHUB_BROWSER_CLI settings schedule list                  # save <JSON|--file 경로> | enable <id> <on|off> | run <id> | remove <id> | clear-history
+            ~~~
+
+            - 모델·추론 강도·권한 허용 값은 먼저 `settings get cli` 의 `choices` 에서 확인한 뒤 설정하라.
+            - 이미 열려 있는 CLI 탭은 시작할 때의 인자로 계속 돌며, 바꾼 CLI 기본값은 **새로 여는 대화 탭**부터 적용된다.
+            - 계정 삭제(`account remove`), 텔레그램 토큰 삭제(`telegram clear-token`), 브라우저 로그인 정보 지우기(`settings signin clear-passwords --confirm` / `clear-all --confirm`)처럼 되돌리기 어려운 작업은 실행 전 사용자에게 먼저 확인받아라.
             """;
     }
 }

@@ -84,8 +84,9 @@ public partial class MainWindow : Window
         catch { return ""; }   // 버전을 못 읽는다고 창이 안 뜨면 안 된다
     }
 
-    public MainWindow()
+    public MainWindow(bool isStartupLaunch = false)
     {
+        _isStartupLaunch = isStartupLaunch;
         InitializeComponent();
 
         // XAML 의 제목은 버전 없는 이름이다. 못 읽었으면 그대로 둔다 — 이름 뒤에
@@ -127,6 +128,16 @@ public partial class MainWindow : Window
         }
 
         if (_closingDone) return;
+
+        // 닫기(×) 버튼을 눌렀고 설정에서 트레이로 숨기기가 켜져 있으면 종료 대신 트레이로 내린다.
+        // 트레이 메뉴 [종료] 나 Windows 로그오프·종료(_exitRequested)일 때만 실제로 종료한다.
+        if (!_exitRequested && !_closingStarted && Settings.Load().CloseToTray)
+        {
+            e.Cancel = true;
+            HideToTray();
+            return;
+        }
+
         e.Cancel = true;
         if (_closingStarted) return;
         _closingStarted = true;
@@ -165,6 +176,7 @@ public partial class MainWindow : Window
         _tabs.Clear();
         _browsers.Clear();
         _order.Clear();
+        DisposeTrayIcon();
         _closingDone = true;
         Close();
     }
@@ -264,6 +276,7 @@ public partial class MainWindow : Window
         switch (t)
         {
             case "ui.ready":
+                CompleteInitialTrayStart();
                 PostConf();
                 ApplyPet();
 
@@ -325,6 +338,19 @@ public partial class MainWindow : Window
             case "conf.startup":
                 SetStartupRegistration(m["on"]?.GetValue<bool>() ?? false);
                 break;
+
+            case "conf.tray":
+            {
+                var traySettings = Settings.Load();
+                if (m["startInTray"]?.GetValue<string>() is { } sit)
+                    traySettings.StartInTray = sit;
+                if (m["closeToTray"] is not null)
+                    traySettings.CloseToTray = m["closeToTray"]?.GetValue<bool>() ?? traySettings.CloseToTray;
+                traySettings.Save();
+                UpdateTrayTooltip();
+                Post(new { t = "conf.tray.state", startInTray = traySettings.StartInTray, closeToTray = traySettings.CloseToTray });
+                break;
+            }
 
             // [＋ 새 대화] — 먼저 CLI 고르기 창에 줄 목록을 보낸다. 고른 뒤에는 tab.new 로 돌아온다.
             case "newchat.list":
@@ -960,6 +986,7 @@ public partial class MainWindow : Window
             .Where(s => s is not null)
             .Select(s => s!)
             .ToList();
+        UpdateTrayTooltip();
         if (System.Text.Json.JsonSerializer.Serialize(tabs) == System.Text.Json.JsonSerializer.Serialize(cfg.Tabs)) return;
         cfg.Tabs = tabs;
         cfg.Save();
@@ -1468,6 +1495,30 @@ public partial class MainWindow : Window
     /// 잡혔는지 안 보이면** 설정 화면은 "빈 칸" 만 보여 준다. 사용자는 지정을 해야 하는지
     /// 안 해도 되는지 알 수가 없고, 안 뜰 때 어디를 봐야 할지도 모른다.
     /// </summary>
+    internal static object BuildAccountViews(Settings c) =>
+        Accounts.All(c).Select(a =>
+        {
+            var claude = a.Cli.Kind == CliKind.Claude;
+            var mode = claude && !a.IsDefault ? Accounts.ClaudeModeOf(a.Id) : ClaudeMode.Login;
+            return new
+            {
+                backend = a.Cli.Backend,
+                id = a.Id,
+                name = a.Label,
+                email = a.Email,
+                loggedIn = a.LoggedIn,
+                note = a.Note,
+                // [폴더] 단추가 여는 곳 — 그 계정의 설정 폴더(claude) · 홈(codex). 기본 계정은 단추가 없다.
+                home = a.IsDefault ? "" : claude ? Accounts.ClaudeHomeOf(a.Id)
+                    : a.Cli.Kind == CliKind.Antigravity ? AntigravityAccounts.ProfileOf(a.Id) : Accounts.CodexHomeOf(a.Id),
+                // claude 로그인 방식(빈 값 · sso · console). [다시 로그인] 이 같은 방식으로 열린다.
+                login = claude ? Accounts.Find(c, a.Id)?.Login ?? "" : "",
+                mode = mode switch { ClaudeMode.Login => "login", ClaudeMode.Token => "token", _ => "" },
+                // setup-token 계정은 사용량 조회가 거절된다(추론 전용 토큰). 줄에서 "—" 의 까닭을 다르게 적는다.
+                tokenOnly = mode == ClaudeMode.Token,
+            };
+        }).ToList();
+
     private void PostConf()
     {
         var c = Settings.Load();
@@ -1479,6 +1530,7 @@ public partial class MainWindow : Window
                 // 어느 CLI 로 열지는 여기 없다 — [＋ 새 대화] 를 누를 때마다 고른다(PostNewChat).
                 Pet = c.Pet ?? new PetSettings(),
                 RunAtStartup = StartupRegistration.IsEnabled(),
+                c.StartInTray, c.CloseToTray,
                 c.UiLanguage, c.ClaudeModel, c.ClaudeEffort, c.CodexModel, c.CodexEffort,
                 c.ClaudeCodePermissionMode, c.CodexSandbox, c.CodexApproval,
                 c.ClaudeCliPath, c.CodexCliPath, c.AntigravityCliPath, c.AntigravityPermission,
@@ -1504,28 +1556,7 @@ public partial class MainWindow : Window
                     };
                 }),
             // 계정. 기본 계정까지 CLI 마다 한 줄씩 — 설정 화면의 [계정] 카드와 맨 아래 사용량 줄이 이것을 그린다.
-            accounts = Accounts.All(c).Select(a =>
-            {
-                var claude = a.Cli.Kind == CliKind.Claude;
-                var mode = claude && !a.IsDefault ? Accounts.ClaudeModeOf(a.Id) : ClaudeMode.Login;
-                return new
-                {
-                    backend = a.Cli.Backend,
-                    id = a.Id,
-                    name = a.Label,
-                    email = a.Email,
-                    loggedIn = a.LoggedIn,
-                    note = a.Note,
-                    // [폴더] 단추가 여는 곳 — 그 계정의 설정 폴더(claude) · 홈(codex). 기본 계정은 단추가 없다.
-                    home = a.IsDefault ? "" : claude ? Accounts.ClaudeHomeOf(a.Id)
-                        : a.Cli.Kind == CliKind.Antigravity ? AntigravityAccounts.ProfileOf(a.Id) : Accounts.CodexHomeOf(a.Id),
-                    // claude 로그인 방식(빈 값 · sso · console). [다시 로그인] 이 같은 방식으로 열린다.
-                    login = claude ? Accounts.Find(c, a.Id)?.Login ?? "" : "",
-                    mode = mode switch { ClaudeMode.Login => "login", ClaudeMode.Token => "token", _ => "" },
-                    // setup-token 계정은 사용량 조회가 거절된다(추론 전용 토큰). 줄에서 "—" 의 까닭을 다르게 적는다.
-                    tokenOnly = mode == ClaudeMode.Token,
-                };
-            }).ToList(),
+            accounts = BuildAccountViews(c),
             file = Settings.FilePath,
             version = AppVersion,
             telegram = TelegramState(),
@@ -1545,6 +1576,7 @@ public partial class MainWindow : Window
         var v = m["v"];
         string Get(string k, string fallback) => v?[k]?.GetValue<string>()?.Trim() ?? fallback;
         c.UiLanguage = Get(nameof(Settings.UiLanguage), c.UiLanguage);
+        c.StartInTray = Get(nameof(Settings.StartInTray), c.StartInTray);
 
         // 모델·강도는 **CLI 마다 따로, 그 CLI 기준으로** 검증한다. 새 대화마다 CLI 를 고르므로
         // 둘 다 언제든 쓰인다 — 한쪽을 건너뛰면 그 CLI 를 고른 날 못 받는 값이 커맨드라인으로 나간다.
@@ -1584,6 +1616,7 @@ public partial class MainWindow : Window
             var x when x.GetValueKind() == JsonValueKind.False => false,
             var x => !string.Equals(x.ToString(), "false", StringComparison.OrdinalIgnoreCase),
         };
+        c.CloseToTray = Flag(v?[nameof(Settings.CloseToTray)], c.CloseToTray);
         c.KeepSignedIn = Flag(v?["KeepSignedIn"], c.KeepSignedIn);
         c.SavePasswords = Flag(v?["SavePasswords"], c.SavePasswords);
         c.GuardClaudeLogin = Flag(v?["GuardClaudeLogin"], c.GuardClaudeLogin);
@@ -1606,6 +1639,7 @@ public partial class MainWindow : Window
         // 새 값을 바로 건다. **쿠키는 안 되돌린다** — 위 주석 참조.
         ApplySignInSettings(c);
         ApplyPet();
+        UpdateTrayTooltip();
 
         Log("설정을 저장했습니다. **다음에 여는 대화부터** 적용됩니다 — 이미 떠 있는 탭은 " +
             "그 인자로 실행 중이라 바꿀 수 없습니다.", "i");
@@ -1644,7 +1678,7 @@ public partial class MainWindow : Window
     /// </summary>
     private const int MaxBookmarks = 30;
 
-    private static List<Bookmark> ReadBookmarks(JsonArray arr)
+    internal static List<Bookmark> ReadBookmarks(JsonArray arr)
     {
         var list = new List<Bookmark>();
         foreach (var n in arr)
@@ -2022,6 +2056,9 @@ public partial class MainWindow : Window
         {
             case "pet":
                 return await AgentPetCommand(a);
+            case "settings":
+            case "config":
+                return await AgentConfigCommand(a);
             case "tabs":
                 return _order
                     .Where(_browsers.ContainsKey)
@@ -2091,7 +2128,7 @@ public partial class MainWindow : Window
 
             default:
                 throw new ArgumentException(
-                    $"모르는 명령 '{cmd}' — tabs · open · goto · back · forward · reload · text · eval · shot · close · pet");
+                    $"모르는 명령 '{cmd}' — tabs · open · goto · back · forward · reload · text · eval · shot · close · pet · settings");
         }
     }
 
