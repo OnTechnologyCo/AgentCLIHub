@@ -336,8 +336,16 @@ try
         StartupRegistration.SetEnabled(true, startupExe, runSubKey, approvedSubKey);
         using (var rk = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(runSubKey))
             Check(StartupRegistration.IsEnabled(runSubKey, approvedSubKey) &&
-                  (string?)rk?.GetValue(StartupRegistration.DefaultValueName) == $"\"{Path.GetFullPath(startupExe)}\"",
-                "enabling startup writes quoted executable path to HKCU Run");
+                  (string?)rk?.GetValue(StartupRegistration.DefaultValueName) == StartupRegistration.FormatRunCommand(startupExe) &&
+                  StartupRegistration.FormatRunCommand(startupExe).EndsWith(" --startup", StringComparison.Ordinal),
+                "enabling startup writes quoted executable path with --startup to HKCU Run");
+
+        using (var rk = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(runSubKey, writable: true))
+            rk.SetValue(StartupRegistration.DefaultValueName, $"\"{Path.GetFullPath(startupExe)}\"", Microsoft.Win32.RegistryValueKind.String);
+        StartupRegistration.SyncExecutableIfEnabled(startupExe, runSubKey, approvedSubKey);
+        using (var rk = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(runSubKey))
+            Check((string?)rk?.GetValue(StartupRegistration.DefaultValueName) == StartupRegistration.FormatRunCommand(startupExe),
+                "SyncExecutableIfEnabled upgrades legacy Run command without --startup");
 
         using (var ak = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(approvedSubKey, writable: true))
             ak.SetValue(StartupRegistration.DefaultValueName, new byte[] { 0x03, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }, Microsoft.Win32.RegistryValueKind.Binary);
@@ -352,12 +360,12 @@ try
 
         StartupRegistration.SyncExecutableIfEnabled(otherExe, runSubKey, approvedSubKey);
         using (var rk = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(runSubKey))
-            Check((string?)rk?.GetValue(StartupRegistration.DefaultValueName) == $"\"{Path.GetFullPath(startupExe)}\"",
+            Check((string?)rk?.GetValue(StartupRegistration.DefaultValueName) == StartupRegistration.FormatRunCommand(startupExe),
                 "non-app test host executable never overwrites startup path");
 
         StartupRegistration.SyncExecutableIfEnabled(movedExe, runSubKey, approvedSubKey);
         using (var rk = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(runSubKey))
-            Check((string?)rk?.GetValue(StartupRegistration.DefaultValueName) == $"\"{Path.GetFullPath(movedExe)}\"",
+            Check((string?)rk?.GetValue(StartupRegistration.DefaultValueName) == StartupRegistration.FormatRunCommand(movedExe),
                 "SyncExecutableIfEnabled updates Run path when AgentCLIHub.exe moves");
 
         StartupRegistration.SetEnabled(false, null, runSubKey, approvedSubKey);
@@ -372,6 +380,7 @@ try
     }
 
     TransferChecks.Run(root, Check);
+    await AgentConfigChecks.RunAsync(root, Check);
     Console.WriteLine($"{passed} checks passed");
 }
 finally

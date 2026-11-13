@@ -55,7 +55,7 @@ New conversation → **Antigravity** → working folder launches `agy` in the bu
 - Permissions: CLI default, `--sandbox`, or `--dangerously-skip-permissions`. A custom PATH wrapper can apply its own options.
 - Resume reads `~/.gemini/antigravity-cli/history.jsonl` and `cache/last_conversations.json`, showing only entries whose conversation `.db` or `.pb` remains. A selection opens with `--conversation <ID>`. Restart restoration uses `--continue` for the folder's latest conversation. Handoff tabs locate the session that received the handoff file.
 - Since 1.7.0, **Continue with another CLI/account** supports transfers both ways with Claude/Codex. A handoff to Antigravity uses the configured model to read the file, acknowledge it, and wait for the next request.
-- Add Antigravity accounts under Settings → Accounts. Follow the native Google sign-in instructions in the terminal, then use `/exit` after signing in. Check usage with each CLI's `/usage`. Automatic browser guidance injection applies only to Claude/Codex.
+- Add Antigravity accounts under Settings → Accounts. Follow the native Google sign-in instructions in the terminal, then use `/exit` after signing in. Check quota in the bottom `Gemini` usage strip or with each CLI's `/usage`. Built-in browser, pet, and app settings instructions are provided to Antigravity via the `~/.gemini/config/skills/agentclihub/SKILL.md` global skill.
 
 Official guides: [installation/login](https://www.antigravity.google/docs/cli/install/) and [resume](https://www.antigravity.google/docs/cli/commands/resume/).
 
@@ -477,3 +477,29 @@ Settings → **Scheduled tasks** → **＋ Add schedule**
 
 Checks: `dotnet run --project tests/ScheduleChecks/ScheduleChecks.csproj`. Covers cron/next-run calculation and validation, and — with a fake clock and fake app —
 1-minute runs, one catch-up run after overlaps, run now, disabled tasks, missing tabs, opening and closing new tabs, one-time tasks and approval notifications.
+
+## System tray & LLM settings control (1.9.8)
+
+### System tray
+
+Runs in the Windows notification area (system tray near the clock) while keeping open CLI tabs, scheduled tasks, Telegram remote, and the agent bridge active in the background.
+
+Settings → **Startup · Tray**
+
+- **On launch** (`StartInTray`): choose **Always start in system tray** (default), **Start in tray only at Windows startup** (`--startup`), or **Start as normal window**.
+- **Close (×) button action** (`CloseToTray`): choose **Hide to system tray** (default) or **Exit app**. When hiding to tray on close is enabled, use **Exit** in the tray right-click menu (or Windows sign-out/shutdown) to quit completely.
+- Launching the shortcut again while already running wakes and brings the existing instance to the front instead of opening a duplicate instance.
+- **Tray icon actions**: click or double-click to open the window; right-click for **Open window / Bring window to front**, **Hide to tray**, **＋ New chat…**, **↻ Resume conversation…**, **Open tabs** switcher, **Browser shortcuts**, **⚙ Open settings**, quick toggles (**Show pet**, **Telegram remote**, **Hide to tray on close (×)**, **Launch at Windows startup**), and **Exit**.
+
+### Inspecting, modifying, and saving Settings from each LLM
+
+All three CLIs running inside an app tab (**Claude Code**, **Codex**, and **Antigravity (`agy`)**) can inspect, validate, modify, and save `[⚙ Settings]` through `AGENTCLIHUB_BROWSER_CLI settings` (alias `config`). Updates persist immediately to `settings.json`, Windows startup registration, the tray icon, and any open `[⚙ Settings]` view, while masking raw passwords, Telegram bot tokens, and OAuth tokens.
+
+```powershell
+& $env:AGENTCLIHUB_BROWSER_CLI settings get
+& $env:AGENTCLIHUB_BROWSER_CLI settings set StartInTray startup
+& $env:AGENTCLIHUB_BROWSER_CLI settings set CloseToTray true
+& $env:AGENTCLIHUB_BROWSER_CLI settings patch '{"CodexModel":"gpt-5.4","CodexEffort":"high"}'
+& $env:AGENTCLIHUB_BROWSER_CLI settings bookmark list
+& $env:AGENTCLIHUB_BROWSER_CLI settings schedule list
+```

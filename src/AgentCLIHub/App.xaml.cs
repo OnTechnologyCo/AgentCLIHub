@@ -1,5 +1,7 @@
 using System;
 using System.IO;
+using System.Linq;
+using System.Threading;
 using System.Windows;
 
 namespace AgentCLIHub;
@@ -7,18 +9,21 @@ namespace AgentCLIHub;
 public partial class App : Application
 {
     /// <summary>
-    /// "지금 떠 있다" 는 표식. **두 번째 실행을 막지는 않는다** — 창을 두 개 띄우는 것은
-    /// 막을 이유가 없고(브라우저 창구도 프로세스마다 따로 연다), 이것은 오로지
-    /// 설치 프로그램이 보라고 두는 것이다.
-    ///
-    /// 이것이 없으면 설치·제거 중에 앱이 떠 있어도 아무 말이 없고, 잠긴 파일 때문에
-    /// 설치가 반쯤 되다 만다 — 그때 화면에는 이유가 안 나온다.
-    /// installer\AgentCLIHub.iss 의 <c>CheckForMutexes</c> 가 이 이름을 본다.
+    /// "지금 떠 있다" 는 표식. 설치 프로그램(<c>installer\AgentCLIHub.iss</c> 의 <c>CheckForMutexes</c>)이
+    /// 이 이름을 보고, 이미 트레이에 숨어 돌고 있을 때 바로가기를 다시 누르면 새 프로세스를 겹쳐 띄우는 대신
+    /// 떠 있는 창을 앞으로 불러낸다(<see cref="ShowWindowEventName"/>).
     /// </summary>
-    private static System.Threading.Mutex? _running;
+    private static Mutex? _running;
+    private static EventWaitHandle? _showWindowEvent;
+    private static CancellationTokenSource? _ipcCts;
+
+    private const string ShowWindowEventName = @"Local\AgentCLIHub.ShowWindow";
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        var isStartupLaunch = e.Args.Any(a => string.Equals(a, StartupRegistration.StartupArg, StringComparison.OrdinalIgnoreCase));
+        var allowMulti = e.Args.Any(a => string.Equals(a, "--multi", StringComparison.OrdinalIgnoreCase));
+
         // Windows 시작프로그램(HKCU\...\Run)으로 뜰 때는 작업 폴더가 System32 로 잡힐 수 있다.
         try
         {
@@ -31,6 +36,27 @@ public partial class App : Application
             }
         }
         catch { }
+
+        var createdNew = true;
+        try { _running = new Mutex(true, "AgentCLIHub.Running", out createdNew); } catch { }
+
+        if (!createdNew && !allowMulti)
+        {
+            // 이미 트레이(또는 창)에서 돌고 있다 — 두 벌이 동시에 뜨면 텔레그램 봇 폴링·예약 작업·settings.json 이 충돌한다.
+            // 사용자가 직접 실행한 경우에만 기존 창을 앞으로 깨운다.
+            if (!isStartupLaunch)
+            {
+                try
+                {
+                    using var ev = EventWaitHandle.OpenExisting(ShowWindowEventName);
+                    ev.Set();
+                }
+                catch { }
+            }
+            try { _running?.Dispose(); _running = null; } catch { }
+            Shutdown(0);
+            return;
+        }
 
         try
         {
@@ -45,10 +71,47 @@ public partial class App : Application
             return;
         }
         try { StartupRegistration.SyncExecutableIfEnabled(); } catch { }
-        try { _running = new System.Threading.Mutex(false, "AgentCLIHub.Running"); } catch { }
+
+        ShutdownMode = ShutdownMode.OnMainWindowClose;
+        SessionEnding += (_, _) => (MainWindow as MainWindow)?.RequestExit();
+        Exit += (_, _) =>
+        {
+            try { _ipcCts?.Cancel(); _ipcCts?.Dispose(); } catch { }
+            try { _showWindowEvent?.Dispose(); } catch { }
+            try { if (createdNew) _running?.ReleaseMutex(); } catch { }
+            try { _running?.Dispose(); } catch { }
+        };
+
+        StartShowWindowListener();
+
         base.OnStartup(e);
-        MainWindow = new MainWindow();
-        MainWindow.Show();
+        var window = new MainWindow(isStartupLaunch);
+        MainWindow = window;
+        window.ShowInitial();
+    }
+
+    private void StartShowWindowListener()
+    {
+        try
+        {
+            _showWindowEvent = new EventWaitHandle(false, EventResetMode.AutoReset, ShowWindowEventName);
+            _ipcCts = new CancellationTokenSource();
+            var token = _ipcCts.Token;
+            var handle = _showWindowEvent;
+            ThreadPool.QueueUserWorkItem(_ =>
+            {
+                var handles = new WaitHandle[] { handle, token.WaitHandle };
+                while (!token.IsCancellationRequested)
+                {
+                    int idx;
+                    try { idx = WaitHandle.WaitAny(handles); }
+                    catch { break; }
+                    if (idx != 0 || token.IsCancellationRequested) break;
+                    Dispatcher.BeginInvoke(() => (MainWindow as MainWindow)?.ShowFromTray());
+                }
+            });
+        }
+        catch { }
     }
     public App()
     {

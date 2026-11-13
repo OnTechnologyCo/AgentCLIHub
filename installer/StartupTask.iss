@@ -23,10 +23,10 @@ begin
   RegDeleteValue(HKCU, RunSubKey, 'LLM Tools');
   RegDeleteValue(HKCU, RunSubKey, 'Agent CLI Hub');
   if TaskSelected then begin
-    RegWriteStringValue(HKCU, RunSubKey, ValueName, '"' + ExePath + '"');
+    RegWriteStringValue(HKCU, RunSubKey, ValueName, '"' + ExePath + '" --startup');
     RegDeleteValue(HKCU, ApprovedSubKey, ValueName);
   end else if SilentWithoutTasksParam and HadBefore then
-    RegWriteStringValue(HKCU, RunSubKey, ValueName, '"' + ExePath + '"')
+    RegWriteStringValue(HKCU, RunSubKey, ValueName, '"' + ExePath + '" --startup')
   else
     RegDeleteValue(HKCU, RunSubKey, ValueName);
 end;

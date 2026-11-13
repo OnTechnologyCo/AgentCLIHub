@@ -128,7 +128,7 @@ public partial class MainWindow : IScheduleHost
     private void PostSchedules() => Post(new { t = "sched.state", state = ScheduleState() });
 
     /// <summary>화면이 보낸 작업을 읽는다. 모르는 칸·틀린 모양은 기본값으로 둔다(여기서 던지면 저장이 조용히 사라진다).</summary>
-    private static ScheduledJob ReadJob(JsonNode? n)
+    internal static ScheduledJob ReadJob(JsonNode? n, Settings? settings = null)
     {
         ScheduledJob job;
         try { job = n?.Deserialize<ScheduledJob>(new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new(); }
@@ -141,7 +141,7 @@ public partial class MainWindow : IScheduleHost
         job.Effort = job.Effort.Trim();
         if (job.Target == "new" && CliProfile.For(job.Backend) is { } cli)
         {
-            var cfg = Settings.Load();
+            var cfg = settings ?? Settings.Load();
             job.Model = CliCatalog.ClampModel(cli.Backend, job.Model);
             var effModel = job.Model.Length > 0 ? job.Model : cli.ModelOf(cfg);
             job.Effort = CliCatalog.ClampEffort(cli.Backend, effModel, job.Effort);
@@ -164,13 +164,13 @@ public partial class MainWindow : IScheduleHost
     }
 
     /// <summary>계정까지 본 검사. 일정·탭 검사는 <see cref="ScheduleCalc.Validate"/>.</summary>
-    private static string? ValidateJob(ScheduledJob job)
+    internal static string? ValidateJob(ScheduledJob job, Settings? settings = null)
     {
         if (ScheduleCalc.Validate(job, DateTime.Now) is { } error) return error;
         if (job.Target == "new")
         {
             var cli = CliProfile.For(job.Backend)!;
-            if (Accounts.Resolve(Settings.Load(), cli, job.Account) != job.Account) return "계정을 찾지 못했습니다.";
+            if (Accounts.Resolve(settings ?? Settings.Load(), cli, job.Account) != job.Account) return "계정을 찾지 못했습니다.";
         }
         return null;
     }

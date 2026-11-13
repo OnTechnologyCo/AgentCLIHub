@@ -160,7 +160,7 @@ internal static class Program
     }
 
     private const string Usage = """
-        agentclihub-browser — AgentCLIHub의 브라우저와 펫을 조작한다.
+        agentclihub-browser — AgentCLIHub의 브라우저·펫·설정을 조작한다.
 
           tabs                      열려 있는 브라우저 탭 목록
           open <주소>               새 탭을 열고 번호를 돌려준다
@@ -170,6 +170,18 @@ internal static class Program
           eval <번호> <스크립트>    그 페이지 안에서 JS 를 돌린다
           shot <번호> <저장경로>    그 탭 화면을 PNG 로 저장
           close <번호>              탭을 닫는다
+
+          settings [get [구역]]     앱 설정 조회 (all|ui|startup|tray|cli|bookmarks|signin|accounts|pet|telegram|schedules)
+          settings set <항목> <값>  단일 설정 변경·즉시 저장 (허용 값 검증·열린 [⚙ 설정] 화면 실시간 반영)
+          settings patch <JSON|--file 경로>  여러 설정 항목 일괄 변경·저장
+          settings open             창을 앞으로 가져오고 [⚙ 설정] 화면을 연다
+          settings window <status|show|hide|settings>  창·트레이 표시 상태 조회·전환
+          settings models-refresh [경로]     Antigravity 모델 목록 새로고침
+          settings bookmark <list|add|update|move|remove> ...
+          settings account <list|rename|add|login|remove> ...
+          settings telegram <status|enable|set-token|clear-token|pair|revoke> ...
+          settings schedule <list|save|enable|run|remove|clear-history> ...
+          settings signin <clear-passwords|clear-all> --confirm
 
           pet status                현재 펫 설정, 이미지 경로, 스프라이트 규격
           pet list                  저장된 펫 목록과 선택된 ID

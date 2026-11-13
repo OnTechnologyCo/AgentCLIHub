@@ -23,13 +23,15 @@ public static class StartupRegistration
     public const string DefaultValueName = "AgentCLIHub";
     private const string ExpectedExeName = "AgentCLIHub.exe";
 
+    public const string StartupArg = "--startup";
+
     public static string FormatRunCommand(string executablePath)
     {
         if (string.IsNullOrWhiteSpace(executablePath))
             throw new ArgumentException("실행 파일 경로가 비어 있습니다.", nameof(executablePath));
 
         var full = Path.GetFullPath(executablePath.Trim().Trim('"'));
-        return $"\"{full}\"";
+        return $"\"{full}\" {StartupArg}";
     }
 
     public static bool IsEnabled(

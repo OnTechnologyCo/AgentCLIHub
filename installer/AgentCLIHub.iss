@@ -62,7 +62,7 @@ Name: "desktopicon"; Description: "바탕 화면에 바로 가기 만들기"; Gr
 Name: "startup"; Description: "Windows 시작 시 자동 실행"; GroupDescription: "시작 옵션:"; Flags: unchecked
 
 [Registry]
-Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "{#AppName}"; ValueData: """{app}\{#AppExe}"""; Tasks: startup; Flags: uninsdeletevalue
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "{#AppName}"; ValueData: """{app}\{#AppExe}"" --startup"; Tasks: startup; Flags: uninsdeletevalue
 
 [Files]
 ; .NET 설치 없이 실행 가능한 단일 파일 도우미를 설치 전 점검에 사용한다.

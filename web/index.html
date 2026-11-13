@@ -1937,7 +1937,7 @@ function renderConf() {
   languageGrid.append(languageLabel, languageSelect);
   note(languageGrid, tr('언어는 즉시 적용하고 자동으로 저장합니다.'));
 
-  const startupGrid = card(tr('시작프로그램'));
+  const startupGrid = card(tr('시작프로그램 · 트레이'));
   const startupLabel = document.createElement('label');
   startupLabel.htmlFor = 'run-at-startup';
   startupLabel.textContent = tr('Windows 시작 시 자동 실행');
@@ -1956,7 +1956,52 @@ function renderConf() {
     wv?.postMessage({ t: 'conf.startup', on });
   });
   startupGrid.append(startupLabel, startupSelect);
-  note(startupGrid, tr('바꾸는 즉시 현재 Windows 계정 시작프로그램에 반영됩니다. 로그인 시 창을 열고 이전 탭을 복원합니다.'));
+
+  const startTrayLabel = document.createElement('label');
+  startTrayLabel.htmlFor = 'start-in-tray';
+  startTrayLabel.textContent = tr('시작 시 표시 방식');
+  const startTraySelect = document.createElement('select');
+  startTraySelect.id = 'start-in-tray';
+  for (const [value, label] of [
+    ['always', tr('항상 트레이 아이콘으로 시작')],
+    ['startup', tr('Windows 자동 실행 시에만 트레이로 시작')],
+    ['never', tr('일반 창으로 시작')],
+  ]) {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = label;
+    startTraySelect.appendChild(option);
+  }
+  startTraySelect.value = ['always', 'startup', 'never'].includes(v.StartInTray) ? v.StartInTray : 'always';
+  startTraySelect.addEventListener('change', () => {
+    v.StartInTray = startTraySelect.value;
+    wv?.postMessage({ t: 'conf.tray', startInTray: v.StartInTray, closeToTray: v.CloseToTray !== false });
+  });
+  startupGrid.append(startTrayLabel, startTraySelect);
+
+  const closeTrayLabel = document.createElement('label');
+  closeTrayLabel.htmlFor = 'close-to-tray';
+  closeTrayLabel.textContent = tr('닫기(×) 버튼 동작');
+  const closeTraySelect = document.createElement('select');
+  closeTraySelect.id = 'close-to-tray';
+  for (const [value, label] of [
+    ['true', tr('트레이 아이콘으로 숨기기')],
+    ['false', tr('프로그램 종료')],
+  ]) {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = label;
+    closeTraySelect.appendChild(option);
+  }
+  closeTraySelect.value = v.CloseToTray === false ? 'false' : 'true';
+  closeTraySelect.addEventListener('change', () => {
+    const closeToTray = closeTraySelect.value === 'true';
+    v.CloseToTray = closeToTray;
+    wv?.postMessage({ t: 'conf.tray', startInTray: v.StartInTray || 'always', closeToTray });
+  });
+  startupGrid.append(closeTrayLabel, closeTraySelect);
+
+  note(startupGrid, tr('바꾸는 즉시 반영·저장됩니다. 시계 옆 트레이 아이콘을 클릭하면 창이 열리고, 우클릭 메뉴에서 창 열기·새 대화·탭 전환·설정·종료를 바로 실행할 수 있습니다.'));
 
   PetUI.render(card(tr('펫')).parentElement);
 
@@ -2988,7 +3033,11 @@ wv?.addEventListener('message', ev => {
       applyLanguage(m.settings?.UiLanguage || 'ko');
       renderSites();
       renderUsage();          // 탐지 결과·계정 목록이 바뀌면 사용량 줄에 설 계정도 바뀐다
-      if (confOn) renderConf();
+      if (confOn) {
+        const scroll = $('conf').scrollTop;
+        renderConf();
+        $('conf').scrollTop = scroll;
+      }
       break;
 
     case 'ui.language':
@@ -2999,6 +3048,37 @@ wv?.addEventListener('message', ev => {
       if (CONF?.settings) CONF.settings.RunAtStartup = !!m.on;
       if ($('run-at-startup')) $('run-at-startup').value = m.on ? 'true' : 'false';
       break;
+
+    case 'conf.tray.state':
+      if (CONF?.settings) {
+        if (typeof m.startInTray === 'string') CONF.settings.StartInTray = m.startInTray;
+        if (typeof m.closeToTray === 'boolean') CONF.settings.CloseToTray = m.closeToTray;
+      }
+      if ($('start-in-tray') && typeof m.startInTray === 'string') $('start-in-tray').value = m.startInTray;
+      if ($('close-to-tray') && typeof m.closeToTray === 'boolean') $('close-to-tray').value = m.closeToTray ? 'true' : 'false';
+      break;
+
+    case 'conf.open':
+      histOpen(false); pickOpen(false); swapOpen(false);
+      showConf();
+      break;
+
+    case 'hist.open':
+      pickOpen(false); swapOpen(false);
+      histOpen(true);
+      break;
+
+    case 'ui.newchat':
+      histOpen(false); swapOpen(false);
+      wv?.postMessage({ t: 'newchat.list' });
+      break;
+
+    case 'win.shown': {
+      const t = !confOn ? cur() : null;
+      if (t) setTimeout(() => { fitNow(t); t.term?.focus(); }, 40);
+      layoutBrowsers();
+      break;
+    }
 
     case 'conf.models.loading':
       if (!CONF) break;
