@@ -13,6 +13,9 @@ public sealed class TelegramSettings
     /// <summary>켜 두면 앱이 떠 있는 동안 봇 메시지를 받는다. 기본은 꺼짐.</summary>
     public bool Enabled { get; set; }
 
+    /// <summary>대화창 아래에 고정 빠른 메뉴 바(Reply Keyboard)를 띄운다. 기본은 켜짐.</summary>
+    public bool ShowQuickBar { get; set; } = true;
+
     /// <summary>페어링을 마친 대화(텔레그램 chat id). **여기 없는 대화의 말은 실행하지 않는다.**</summary>
     public List<TelegramChat> Chats { get; set; } = [];
 }

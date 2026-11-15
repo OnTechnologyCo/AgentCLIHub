@@ -554,7 +554,7 @@ public static class AgentBrief
             # 5) 브라우저 바로가기(북마크) · 계정 · 텔레그램 · 예약 작업 관리
             & $env:AGENTCLIHUB_BROWSER_CLI settings bookmark list                  # add <이름> <주소> [show] | update <순번> <이름> <주소> [show] | move <순번> <목표순번|up|down> | remove <순번>
             & $env:AGENTCLIHUB_BROWSER_CLI settings account list                   # rename <id|default:CLI> <새이름> | add <cli> <이름> [sso|console] | login <id> | remove <id>
-            & $env:AGENTCLIHUB_BROWSER_CLI settings telegram status                # enable <on|off> | set-token <토큰> | clear-token | pair | revoke <chatId>
+            & $env:AGENTCLIHUB_BROWSER_CLI settings telegram status                # enable <on|off> | quickbar <on|off> | set-token <토큰> | clear-token | pair | revoke <chatId>
             & $env:AGENTCLIHUB_BROWSER_CLI settings schedule list                  # save <JSON|--file 경로> | enable <id> <on|off> | run <id> | remove <id> | clear-history
             ~~~
 

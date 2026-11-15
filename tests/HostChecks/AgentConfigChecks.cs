@@ -170,6 +170,10 @@ internal static class AgentConfigChecks
             check(accRename.Exit == 0 && host.LoadSettings().DefaultAccountNames["codex_cli"] == "회사 Codex",
                 "settings account rename updates default account display name");
 
+            var tgBarOff = await InvokeCliAsync("settings", "telegram", "quickbar", "off");
+            check(tgBarOff.Exit == 0 && host.LoadSettings().Telegram.ShowQuickBar == false,
+                "settings telegram quickbar toggles persistent bottom quick bar off");
+
             var schedDir = Path.Combine(root, "sched-work");
             Directory.CreateDirectory(schedDir);
             var schedFile = Path.Combine(root, "job.json");
@@ -294,6 +298,7 @@ internal static class AgentConfigChecks
             return new
             {
                 enabled = s.Telegram.Enabled,
+                showQuickBar = s.Telegram.ShowQuickBar,
                 hasToken = _rawBotToken.Length > 0,
                 running = s.Telegram.Enabled && _rawBotToken.Length > 0,
                 bot = _rawBotToken.Length > 0 ? "test_bot" : "",
