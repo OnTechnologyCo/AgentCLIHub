@@ -491,6 +491,13 @@ public sealed class AgentConfigService
                 return res;
             }
 
+            case "telegramshowquickbar" or "telegramquickbar":
+            {
+                c.Telegram.ShowQuickBar = ParseBool(v, "Telegram.ShowQuickBar");
+                res.CanonicalKey = "Telegram.ShowQuickBar";
+                return res;
+            }
+
             case "petenabled" or "petvisible":
                 c.Pet ??= new PetSettings();
                 c.Pet.SetOption("visible", ParseBool(v, "Pet.Enabled") ? "on" : "off");
@@ -727,6 +734,16 @@ public sealed class AgentConfigService
                 return _host.GetTelegramState();
             }
 
+            case "quickbar":
+            {
+                if (args.Length < 2) throw new ArgumentException("settings telegram quickbar <on|off>");
+                var c = _host.LoadSettings();
+                c.Telegram.ShowQuickBar = ParseBool(args[1], "Telegram.ShowQuickBar");
+                _host.SaveSettings(c);
+                _host.ApplyLiveUi(c, false, false, false);
+                return _host.GetTelegramState();
+            }
+
             case "set-token":
             {
                 if (args.Length < 2 || string.IsNullOrWhiteSpace(args[1]))
@@ -750,7 +767,7 @@ public sealed class AgentConfigService
             }
 
             default:
-                throw new ArgumentException("settings telegram <status|enable|set-token|clear-token|pair|revoke>");
+                throw new ArgumentException("settings telegram <status|enable|quickbar|set-token|clear-token|pair|revoke>");
         }
     }
 

@@ -35,6 +35,34 @@ public static class TelegramText
     public static string Unescape(string text) =>
         text.StartsWith("//", StringComparison.Ordinal) ? text[1..] : text;
 
+    /// <summary>하단 고정 빠른 메뉴 바의 단추 배열(2줄 × 4칸).</summary>
+    public static string[][] QuickBarRows(bool english) => english
+        ? [
+            ["📋 Menu", "🗂 Tabs", "🖥 Screen", "➕ New tab"],
+            ["↻ Resume", "📊 Usage", "⏰ Schedules", "⚙ Settings"],
+        ]
+        : [
+            ["📋 메뉴", "🗂 탭", "🖥 화면", "➕ 새 탭"],
+            ["↻ 이어하기", "📊 사용량", "⏰ 예약", "⚙ 설정"],
+        ];
+
+    /// <summary>
+    /// 하단 고정 빠른 메뉴 바(Reply Keyboard) 단추를 눌렀을 때 오는 일반 문자열을 봇 명령으로 바꾼다.
+    /// 언어를 바꾼 뒤에도 예전 키보드 단추 문구가 CLI 질문으로 잘못 들어가지 않도록 한·영 모두 받는다.
+    /// </summary>
+    public static string? QuickBarAction(string? text) => (text ?? "").Trim() switch
+    {
+        "📋 메뉴" or "📋 Menu" => "menu",
+        "🗂 탭" or "🗂 Tabs" => "tabs",
+        "🖥 화면" or "🖥 Screen" => "screen",
+        "➕ 새 탭" or "➕ New tab" => "new",
+        "↻ 이어하기" or "↻ Resume" => "resume",
+        "📊 사용량" or "📊 Usage" => "usage",
+        "⏰ 예약" or "⏰ Schedules" => "schedules",
+        "⚙ 설정" or "⚙ Settings" => "settings",
+        _ => null,
+    };
+
     /// <summary>
     /// "/new D:\작업 폴더 codex" → ("D:\작업 폴더", "codex_cli"). CLI 이름은 맨 끝에만 온다 —
     /// 폴더 이름에 빈칸이 있을 수 있어서다. 이름이 없으면 backend 는 빈 값(= 마지막으로 고른 CLI).

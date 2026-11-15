@@ -83,6 +83,30 @@ public sealed class TelegramApi : IDisposable
         return new JsonObject { ["inline_keyboard"] = arr };
     }
 
+    /// <summary>대화창 입력칸 아래에 붙는 고정 빠른 메뉴 바(ReplyKeyboardMarkup).</summary>
+    public static JsonObject ReplyKeyboard(IEnumerable<IEnumerable<string>> rows, bool persistent = true, string? placeholder = null)
+    {
+        var arr = new JsonArray();
+        foreach (var row in rows)
+        {
+            var r = new JsonArray();
+            foreach (var label in row)
+                if (!string.IsNullOrWhiteSpace(label)) r.Add(new JsonObject { ["text"] = label });
+            if (r.Count > 0) arr.Add(r);
+        }
+        var obj = new JsonObject
+        {
+            ["keyboard"] = arr,
+            ["resize_keyboard"] = true,
+            ["is_persistent"] = persistent,
+        };
+        if (!string.IsNullOrEmpty(placeholder)) obj["input_field_placeholder"] = placeholder;
+        return obj;
+    }
+
+    /// <summary>고정 빠른 메뉴 바를 숨긴다(ReplyKeyboardRemove).</summary>
+    public static JsonObject RemoveReplyKeyboard() => new() { ["remove_keyboard"] = true };
+
     private async Task<JsonNode?> CallAsync(string method, JsonObject body, CancellationToken ct)
     {
         for (var attempt = 0; ; attempt++)
