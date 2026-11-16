@@ -130,6 +130,7 @@ try
     Check(!JsonSerializer.Serialize(round).Contains("Token", StringComparison.OrdinalIgnoreCase), "settings never hold the bot token");
 
     // ── 끝에서 끝까지(가짜 텔레그램 + 가짜 앱) ──
+    await FileTransferChecks.RunAsync(root, Check);
     await EndToEnd();
 
     Console.WriteLine($"All {passed} Telegram checks passed.");
@@ -299,11 +300,60 @@ async Task EndToEnd()
     tg.Callback(Me, "cf:set:1", messageId: 1090);
     await Until(() => app.ClaudeModel == "opus", "picking a model updates default CLI model");
 
+    // 파일 받기·보내기: 실제 API 대신 바이트를 검사한다.
+    var outputFile = Path.Combine(root, "전송 결과.txt");
+    var outputBytes = Encoding.UTF8.GetBytes("한글 파일 내용\n");
+    File.WriteAllBytes(outputFile, outputBytes);
+    tg.Message(Me, "/use 1");
+    var promptsBeforeFiles = app.Sent.Count;
+    tg.Message(Me, "/file \"전송 결과.txt\"");
+    await Until(() => tg.Documents.Count == 1, "relative /file sends a document to the requesting chat");
+    Check(tg.Documents[0].Chat == Me && tg.Documents[0].Bytes.SequenceEqual(outputBytes), "outgoing document bytes match the PC file");
+    tg.Message(Me, "/file " + outputFile);
+    await Until(() => tg.Documents.Count == 2, "absolute /file accepts spaces without quotes");
+    tg.Message(Me, "/file missing-file.txt");
+    await Until(() => tg.SentTo(Me).Any(t => t.Contains("파일을 보내지 못했습니다")), "missing PC file reports failure in chat");
+    Check(app.Sent.Count == promptsBeforeFiles, "/file commands never become CLI prompts");
+    Check(await remote.SendFileAsync(Me, outputFile) > 0 && tg.Documents.Count == 3,
+        "agent-facing file sender returns a completed Telegram message id");
+
+    app.OnSend = null;
+    app.Screen = "• Working (esc to interrupt)";
+    foreach (var kind in new[] { "document", "photo", "video", "audio", "voice", "animation", "video_note" })
+    {
+        var count = app.Attachments.Count;
+        tg.Message(Me, "/close", attachment: new JsonObject
+        {
+            [kind] = kind == "photo"
+                ? new JsonArray(new JsonObject { ["file_id"] = "small" }, new JsonObject { ["file_id"] = "largest" })
+                : new JsonObject { ["file_id"] = kind, ["file_name"] = "../../한글 첨부.bin", ["file_size"] = 4 },
+        });
+        await Until(() => app.Attachments.Count > count, kind + " attachment reaches the CLI");
+        var received = app.Attachments.Last().Single();
+        Check(Path.GetDirectoryName(received) == Path.Combine(root, ".agentclihub-attachments", "telegram") &&
+            File.ReadAllBytes(received).SequenceEqual(FakeTelegram.DownloadBytes) && app.Sent.Last() == "/close",
+            kind + " stays inside attachment folder and caption is not executed as a bot command");
+    }
+    Check(tg.DownloadIds.Contains("largest") && !tg.DownloadIds.Contains("small"), "photo uses the largest image");
+    var voiceBefore = app.Attachments.Count;
+    tg.Message(Me, "", attachment: new JsonObject
+    {
+        ["voice"] = new JsonObject { ["file_id"] = "voice-no-name", ["mime_type"] = "audio/mp4" },
+    });
+    await Until(() => app.Attachments.Count > voiceBefore, "attachment without caption or filename reaches CLI");
+    Check(app.Attachments.Last().Single().EndsWith("voice.m4a") && app.Sent.Last() == "",
+        "unnamed audio keeps MIME extension and empty caption");
+    var filesBeforeOversize = app.Attachments.Count;
+    tg.Message(Me, "large", attachment: new JsonObject { ["document"] = new JsonObject { ["file_id"] = "too-large", ["file_size"] = TelegramApi.MaxDownload + 1 } });
+    await Until(() => tg.SentTo(Me).Any(t => t.Contains("파일이 20MB")), "oversized incoming file reports its limit");
+    Check(app.Attachments.Count == filesBeforeOversize && !tg.DownloadIds.Contains("too-large"), "oversized metadata blocks download and CLI dispatch");
+
     // 13) 오래된 메시지(앱이 꺼져 있을 때 쌓인 것)는 실행하지 않는다.
     var before = app.Sent.Count;
     tg.Message(Me, "옛날 지시", DateTimeOffset.UtcNow.AddHours(-3));
     await Until(() => tg.SentTo(Me).Any(t => t.Contains("실행하지 않았습니다") || t.Contains("were not run")), "stale message is refused");
     Check(app.Sent.Count == before, "stale message never reaches a tab");
+    tg.Message(Me, "/file " + outputFile, DateTimeOffset.UtcNow.AddHours(-3));
 
     // 14) 지운 대화는 바로 막힌다.
     lock (app.Allowed) app.Allowed.Clear();
@@ -311,6 +361,13 @@ async Task EndToEnd()
     tg.Message(Me, "/tabs");
     await Until(() => tg.SentTo(Me).Count > seen, "revoked chat gets only the pairing hint");
     Check(tg.SentTo(Me).Skip(seen).All(t => t.Contains("/pair") && !t.Contains("Claude Code")), "revoked chat cannot list tabs");
+    var wrongPairs = tg.SentTo(Me).Count(t => t.Contains("맞지 않거나"));
+    tg.Message(Me, "/file " + outputFile);
+    tg.Message(Stranger, "attachment", attachment: new JsonObject { ["document"] = new JsonObject { ["file_id"] = "stranger-file" } });
+    tg.Message(Me, "/pair wrong");
+    await Until(() => tg.SentTo(Me).Count(t => t.Contains("맞지 않거나")) > wrongPairs, "unpaired file updates processed");
+    try { await remote.SendFileAsync(Me, outputFile); throw new Exception("revoked upload allowed"); }
+    catch (UnauthorizedAccessException) { Check(tg.Documents.Count == 3 && !tg.DownloadIds.Contains("stranger-file"), "revoked and unpaired chats cannot transfer files"); }
 }
 
 static string ClaudeLine(string type, string uuid, string? parent, string contentJson) =>
@@ -331,6 +388,10 @@ static async Task Until(Func<bool> condition, string what, int seconds = 10)
 /// <summary>Bot API 흉내. 모든 인라인 callback_data 가 64바이트 한도 안인지도 함께 검사한다.</summary>
 sealed class FakeTelegram : HttpMessageHandler
 {
+    public static readonly byte[] DownloadBytes = [0, 255, 42, 10];
+    private readonly List<(long Chat, byte[] Bytes)> _documents = [];
+    public IReadOnlyList<(long Chat, byte[] Bytes)> Documents { get { lock (_lock) return _documents.ToArray(); } }
+    public List<string> DownloadIds { get; } = [];
     private readonly Queue<JsonObject> _updates = new();
     private readonly object _lock = new();
     private long _updateId = 100, _messageId = 1000;
@@ -341,19 +402,18 @@ sealed class FakeTelegram : HttpMessageHandler
 
     public IReadOnlyList<string> SentTo(long chat) { lock (_lock) return _sent.Where(s => s.Chat == chat).Select(s => s.Text).ToList(); }
 
-    public void Message(long chat, string text, DateTimeOffset? when = null)
+    public void Message(long chat, string text, DateTimeOffset? when = null, JsonObject? attachment = null)
     {
+        var media = attachment?.DeepClone().AsObject() ?? new JsonObject();
+        media[attachment is null ? "text" : "caption"] = text;
+        media["message_id"] = Interlocked.Increment(ref _messageId);
+        media["date"] = (when ?? DateTimeOffset.UtcNow).ToUnixTimeSeconds();
+        media["chat"] = new JsonObject { ["id"] = chat, ["type"] = "private" };
+        media["from"] = new JsonObject { ["id"] = chat, ["is_bot"] = false, ["username"] = "tester" };
         lock (_lock) _updates.Enqueue(new JsonObject
         {
             ["update_id"] = ++_updateId,
-            ["message"] = new JsonObject
-            {
-                ["message_id"] = ++_messageId,
-                ["date"] = (when ?? DateTimeOffset.UtcNow).ToUnixTimeSeconds(),
-                ["chat"] = new JsonObject { ["id"] = chat, ["type"] = "private" },
-                ["from"] = new JsonObject { ["id"] = chat, ["is_bot"] = false, ["username"] = "tester" },
-                ["text"] = text,
-            },
+            ["message"] = media,
         });
     }
 
@@ -391,10 +451,25 @@ sealed class FakeTelegram : HttpMessageHandler
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
     {
         var method = request.RequestUri!.AbsolutePath.Split('/').Last();
-        var body = request.Content is null ? new JsonObject() : JsonNode.Parse(await request.Content.ReadAsStringAsync(ct)) as JsonObject ?? new JsonObject();
+        if (request.Method == HttpMethod.Get)
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(DownloadBytes) };
+        var body = request.Content is null or MultipartFormDataContent ? new JsonObject() : JsonNode.Parse(await request.Content.ReadAsStringAsync(ct)) as JsonObject ?? new JsonObject();
         JsonNode? result = true;
         switch (method)
         {
+            case "sendDocument":
+                var form = (MultipartFormDataContent)request.Content!;
+                var chatPart = form.Single(c => c.Headers.ContentDisposition?.Name?.Trim('"') == "chat_id");
+                var filePart = form.Single(c => c.Headers.ContentDisposition?.Name?.Trim('"') == "document");
+                var chatId = long.Parse(await chatPart.ReadAsStringAsync(ct));
+                var data = await filePart.ReadAsByteArrayAsync(ct);
+                lock (_lock) _documents.Add((chatId, data));
+                result = new JsonObject { ["message_id"] = Interlocked.Increment(ref _messageId) };
+                break;
+            case "getFile":
+                DownloadIds.Add(body["file_id"]!.GetValue<string>());
+                result = new JsonObject { ["file_path"] = "files/test.bin", ["file_size"] = DownloadBytes.Length };
+                break;
             case "getMe":
                 result = new JsonObject { ["id"] = 1, ["username"] = "hub_test_bot", ["first_name"] = "Hub" };
                 break;
@@ -436,6 +511,7 @@ sealed class FakeHost : IRemoteHost
     private readonly List<RemoteTab> _tabs = [];
 
     public List<string> Sent { get; } = [];
+    public List<string[]> Attachments { get; } = [];
     public List<string> Keys { get; } = [];
     public HashSet<long> Allowed { get; } = [];
     public List<string> Restarted { get; } = [];
@@ -475,6 +551,7 @@ sealed class FakeHost : IRemoteHost
     {
         lock (Sent) Sent.Add(text);
         OnSend?.Invoke(text);
+        lock (Attachments) Attachments.Add(files.ToArray());
         return Task.FromResult<string?>(null);
     }
 

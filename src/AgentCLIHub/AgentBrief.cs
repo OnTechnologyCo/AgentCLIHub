@@ -555,11 +555,15 @@ public static class AgentBrief
             & $env:AGENTCLIHUB_BROWSER_CLI settings bookmark list                  # add <이름> <주소> [show] | update <순번> <이름> <주소> [show] | move <순번> <목표순번|up|down> | remove <순번>
             & $env:AGENTCLIHUB_BROWSER_CLI settings account list                   # rename <id|default:CLI> <새이름> | add <cli> <이름> [sso|console] | login <id> | remove <id>
             & $env:AGENTCLIHUB_BROWSER_CLI settings telegram status                # enable <on|off> | quickbar <on|off> | set-token <토큰> | clear-token | pair | revoke <chatId>
+            & $env:AGENTCLIHUB_BROWSER_CLI settings telegram send-file 'D:\작업\결과.pdf' # [chatId] 를 뒤에 붙여 수신 대화 지정
             & $env:AGENTCLIHUB_BROWSER_CLI settings schedule list                  # save <JSON|--file 경로> | enable <id> <on|off> | run <id> | remove <id> | clear-history
             ~~~
 
             - 모델·추론 강도·권한 허용 값은 먼저 `settings get cli` 의 `choices` 에서 확인한 뒤 설정하라.
             - 이미 열려 있는 CLI 탭은 시작할 때의 인자로 계속 돌며, 바꾼 CLI 기본값은 **새로 여는 대화 탭**부터 적용된다.
+            - 사용자가 텔레그램으로 파일을 달라고 하거나 전달을 요청하면 `settings telegram send-file <절대경로> [chatId]` 로 실제 첨부를 보낸다(최대 50MB).
+              페어링이 하나면 chatId 를 생략할 수 있다. 여러 개면 status 의 chats 를 확인하고 요청한 수신 대화를 지정한다. 수신자를 임의로 고르거나 전체 전송하지 마라.
+              sent=true 와 messageId 를 확인한 뒤 전송 완료라고 보고하라. 시간 초과면 대화의 수신 여부를 확인하기 전 자동 재전송하지 마라.
             - 계정 삭제(`account remove`), 텔레그램 토큰 삭제(`telegram clear-token`), 브라우저 로그인 정보 지우기(`settings signin clear-passwords --confirm` / `clear-all --confirm`)처럼 되돌리기 어려운 작업은 실행 전 사용자에게 먼저 확인받아라.
             """;
     }

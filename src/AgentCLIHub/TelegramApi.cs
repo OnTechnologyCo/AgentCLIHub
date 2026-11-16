@@ -1,5 +1,7 @@
 using System.IO;
+using System.Globalization;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json.Nodes;
 
@@ -38,6 +40,9 @@ public sealed class TelegramApi : IDisposable
 
     /// <summary>봇이 받을 수 있는 파일 크기 한도(Bot API getFile 은 20MB 까지).</summary>
     public const long MaxDownload = 20L * 1024 * 1024;
+
+    /// <summary>공용 Bot API sendDocument 업로드 한도.</summary>
+    public const long MaxUpload = 50L * 1024 * 1024;
 
     private readonly HttpClient _http;
     private readonly string _token;
@@ -107,14 +112,17 @@ public sealed class TelegramApi : IDisposable
     /// <summary>고정 빠른 메뉴 바를 숨긴다(ReplyKeyboardRemove).</summary>
     public static JsonObject RemoveReplyKeyboard() => new() { ["remove_keyboard"] = true };
 
-    private async Task<JsonNode?> CallAsync(string method, JsonObject body, CancellationToken ct)
+    private Task<JsonNode?> CallAsync(string method, JsonObject body, CancellationToken ct) =>
+        CallAsync(method, () => new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json"), ct);
+
+    private async Task<JsonNode?> CallAsync(string method, Func<HttpContent> makeContent, CancellationToken ct)
     {
         for (var attempt = 0; ; attempt++)
         {
             HttpResponseMessage res;
             try
             {
-                using var content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json");
+                using var content = makeContent();
                 res = await _http.PostAsync(_base + method, content, ct);
             }
             catch (HttpRequestException ex) { throw new HttpRequestException(Scrub(ex.Message), null, ex.StatusCode); }
@@ -201,6 +209,48 @@ public sealed class TelegramApi : IDisposable
     public Task SendChatActionAsync(long chat, string action, CancellationToken ct = default) =>
         CallAsync("sendChatAction", new JsonObject { ["chat_id"] = chat, ["action"] = action }, ct);
 
+    /// <summary>원본 파일을 메모리에 통째로 올리지 않고 첨부로 전송한다. 네트워크 오류는 자동 재전송하지 않는다.</summary>
+    public async Task<long> SendDocumentAsync(long chat, string path, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        // FileShare.Read 로 업로드 중 크기·내용 변경을 막는다. 429 재시도 때도 같은 파일을 다시 읽는다.
+        await using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read,
+            81920, FileOptions.Asynchronous | FileOptions.SequentialScan);
+        if (file.Length == 0) throw new IOException("빈 파일은 보낼 수 없습니다 (empty file).");
+        if (file.Length > MaxUpload) throw new IOException("파일이 50MB 를 넘습니다 (file exceeds 50 MB).");
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(TimeSpan.FromSeconds(120));
+        try
+        {
+            var msg = await CallAsync("sendDocument", () =>
+            {
+                file.Position = 0;
+                var form = new MultipartFormDataContent();
+                form.Add(new StringContent(chat.ToString(CultureInfo.InvariantCulture)), "chat_id");
+                // multipart 를 버려도 재시도할 파일 스트림은 여기서 닫지 않는다.
+                var content = new FileContent(file);
+                content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+                form.Add(content, "document", Path.GetFileName(path));
+                return form;
+            }, timeout.Token);
+            var messageId = msg?["message_id"]?.GetValue<long>() ?? 0;
+            return messageId > 0 ? messageId : throw new IOException("sendDocument: missing message_id");
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        { throw new TimeoutException("sendDocument: 전송 시간이 지났습니다. 대화에서 수신 여부를 확인하세요 (check the chat before retrying)."); }
+        catch (TimeoutException)
+        { throw new TimeoutException("sendDocument: 전송 시간이 지났습니다. 대화에서 수신 여부를 확인하세요 (check the chat before retrying)."); }
+    }
+
+    private sealed class FileContent(FileStream file) : HttpContent
+    {
+        protected override bool TryComputeLength(out long length) { length = file.Length; return true; }
+        protected override Task SerializeToStreamAsync(Stream stream, System.Net.TransportContext? context) =>
+            file.CopyToAsync(stream);
+        protected override Task SerializeToStreamAsync(Stream stream, System.Net.TransportContext? context, CancellationToken ct) =>
+            file.CopyToAsync(stream, ct);
+    }
+
     /// <summary>대화창의 명령 메뉴(/ 를 누르면 뜨는 목록)를 건다.</summary>
     public Task SetCommandsAsync(IEnumerable<(string Command, string Description)> commands, CancellationToken ct = default)
     {
@@ -221,8 +271,9 @@ public sealed class TelegramApi : IDisposable
         if (string.IsNullOrEmpty(path)) throw new IOException("텔레그램이 파일 위치를 주지 않았습니다.");
         if (size > MaxDownload) throw new IOException("파일이 20MB 를 넘습니다.");
 
-        using var res = await _http.GetAsync(_fileBase + path, HttpCompletionOption.ResponseHeadersRead, ct);
+        using var res = await GetFileResponseAsync(path, ct);
         if (!res.IsSuccessStatusCode) throw new IOException($"파일을 받지 못했습니다(HTTP {(int)res.StatusCode}).");
+        if (res.Content.Headers.ContentLength > MaxDownload) throw new IOException("파일이 20MB 를 넘습니다.");
         await using var src = await res.Content.ReadAsStreamAsync(ct);
         var tmp = destination + ".part";
         try
@@ -242,6 +293,13 @@ public sealed class TelegramApi : IDisposable
             File.Move(tmp, destination, overwrite: false);
         }
         finally { try { if (File.Exists(tmp)) File.Delete(tmp); } catch { } }
+    }
+
+    private async Task<HttpResponseMessage> GetFileResponseAsync(string path, CancellationToken ct)
+    {
+        try { return await _http.GetAsync(_fileBase + path, HttpCompletionOption.ResponseHeadersRead, ct); }
+        catch (HttpRequestException ex) { throw new HttpRequestException(Scrub(ex.Message), null, ex.StatusCode); }
+        catch (TaskCanceledException) when (!ct.IsCancellationRequested) { throw new TimeoutException("getFile: 응답 시간이 지났습니다."); }
     }
 
     public void Dispose() => _http.Dispose();

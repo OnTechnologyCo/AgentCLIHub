@@ -34,6 +34,7 @@ public interface IAgentConfigHost
     object GetPetStatus(Settings settings);
     void ApplyPet(Settings settings);
     object GetTelegramState();
+    Task<object> SendTelegramFileAsync(string path, long? chatId);
     void SetTelegramEnabled(bool enabled);
     Task<object> SetTelegramTokenAsync(string token);
     void ClearTelegramToken();
@@ -727,6 +728,20 @@ public sealed class AgentConfigService
             case "get":
                 return _host.GetTelegramState();
 
+            case "send-file":
+            {
+                if (args.Length is < 2 or > 3 || !Path.IsPathFullyQualified(args[1]))
+                    throw new ArgumentException("settings telegram send-file <파일 절대경로> [chatId]");
+                long? target = null;
+                if (args.Length == 3)
+                {
+                    if (!long.TryParse(args[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out var id) || id == 0)
+                        throw new ArgumentException("chatId 는 settings telegram status 에 표시된 대화 번호여야 합니다.");
+                    target = id;
+                }
+                return await _host.SendTelegramFileAsync(args[1], target);
+            }
+
             case "enable":
             {
                 if (args.Length < 2) throw new ArgumentException("settings telegram enable <on|off>");
@@ -767,7 +782,7 @@ public sealed class AgentConfigService
             }
 
             default:
-                throw new ArgumentException("settings telegram <status|enable|quickbar|set-token|clear-token|pair|revoke>");
+                throw new ArgumentException("settings telegram <status|send-file|enable|quickbar|set-token|clear-token|pair|revoke>");
         }
     }
 
@@ -1010,6 +1025,14 @@ public partial class MainWindow : IAgentConfigHost
     }
 
     object IAgentConfigHost.GetTelegramState() => TelegramState();
+
+    async Task<object> IAgentConfigHost.SendTelegramFileAsync(string path, long? chatId)
+    {
+        var remote = _telegram ?? throw new InvalidOperationException("텔레그램 원격을 먼저 켜세요.");
+        var target = TelegramRemote.FileRecipient(Settings.Load().Telegram.Chats.Select(c => c.Id), chatId);
+        var messageId = await remote.SendFileAsync(target, path);
+        return new { sent = true, chatId = target.ToString(CultureInfo.InvariantCulture), messageId, fileName = Path.GetFileName(path) };
+    }
 
     void IAgentConfigHost.SetTelegramEnabled(bool enabled)
     {

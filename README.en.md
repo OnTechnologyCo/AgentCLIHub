@@ -425,12 +425,17 @@ Settings → **Telegram remote**
 | `/use N` | Choose the tab for questions (automatic when only one is open) |
 | `/new [folder] [claude\|codex\|antigravity]` | Open a tab. Without a folder, recent folders are offered as buttons |
 | `/screen` | Current terminal screen |
+| `/file path` | Receive a PC file as an attachment in this chat. Relative paths use the selected tab's folder (up to 50 MB) |
 | `/esc` · `/enter` · `/key text` | Send Esc · Enter · text without Enter |
 | `/status` | Selected tab and progress |
 
 - Text takes the same path as the input box (bracketed paste + Enter). Unknown `/commands` (`/compact`, …) go to the CLI;
   for a CLI command with the same name as a bot command, use two slashes, e.g. `//help`.
-- Photos and files are downloaded into the tab's `.agentclihub-attachments\telegram\` folder and attached by path (Telegram bot limit: 20 MB).
+- Photos, documents, videos, audio and voice messages are downloaded into the tab's `.agentclihub-attachments\telegram\` folder and attached by path (Telegram bot limit: 20 MB). Captions go to the CLI as prompt text, never as bot commands.
+- Send `/file result.pdf` or `/file "D:\work folder\result.pdf"` to receive the original PC file as an attachment (up to 50 MB).
+  You can also ask the agent to send a result file to Telegram; it uses `settings telegram send-file <absolute file path> [chatId]`.
+  The recipient can be omitted with one paired chat. With multiple chats, specify a recipient from `settings telegram status` → `chats`.
+  Successful delivery returns `sent`, `chatId`, `messageId` and `fileName`.
 - While working, one message is updated with recent tool calls (last 8) and elapsed time. When done, the **text after the last tool call**
   of this turn is sent from the session transcript (jsonl). Long answers are split.
 - Completion requires all three: 2.5 s without terminal output, no `esc to interrupt` on screen, and the transcript's last item being answer text.
@@ -445,7 +450,7 @@ Settings → **Telegram remote**
 file edits and commands run remotely right away. Revoke chats you no longer use.
 
 Checks: `dotnet run --project tests/TelegramChecks/TelegramChecks.csproj`. A fake Bot API and fake app cover pairing, question to final answer,
-approval buttons, stale-message blocking and revocation. No real Telegram, settings file or CLI is used.
+approval buttons, stale-message blocking, revocation, file uploads/downloads, size limits, transfer errors and cancellation. No real Telegram, settings file or CLI is used.
 
 ## Scheduled tasks (1.9.7)
 

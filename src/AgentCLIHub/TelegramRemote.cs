@@ -254,6 +254,7 @@ public sealed class TelegramRemote : IDisposable
         ("new", L("새 대화 탭 열기(폴더·CLI·계정)", "Open a new CLI tab (folder/CLI/account)")),
         ("resume", L("지난 대화 목록에서 이어하기", "Resume a recent conversation")),
         ("screen", L("지금 화면 보기 + 터미널 리모컨", "Show current screen + remote keys")),
+        ("file", L("PC 파일을 첨부로 받기 (/file 경로)", "Receive a PC file (/file path)")),
         ("usage", L("Claude·GPT·Gemini 계정 한도 조회", "Check Claude/GPT/Gemini usage")),
         ("schedules", L("예약 작업 조회·실행·켜기/끄기", "View, run & toggle scheduled tasks")),
         ("settings", L("앱 설정·모델·창/트레이 제어", "App settings, models & window/tray")),
@@ -358,8 +359,10 @@ public sealed class TelegramRemote : IDisposable
         if (from?["is_bot"]?.GetValue<bool>() == true) return;
 
         var text = msg["text"]?.GetValue<string>() ?? msg["caption"]?.GetValue<string>() ?? "";
-        var (cmd, args) = TelegramText.Command(text);
-        if (cmd.Length == 0 && TelegramText.QuickBarAction(text) is { } qb)
+        // 첨부 설명은 CLI 에 보낼 내용이다. /file·/close 같은 글도 봇 명령으로 실행하지 않는다.
+        var isText = msg["text"] is not null;
+        var (cmd, args) = isText ? TelegramText.Command(text) : ("", "");
+        if (isText && cmd.Length == 0 && TelegramText.QuickBarAction(text) is { } qb)
         {
             cmd = qb;
             args = "";
@@ -436,6 +439,9 @@ public sealed class TelegramRemote : IDisposable
             case "screen":
                 await ScreenAsync(chat, null, 0, ct);
                 return;
+            case "file":
+                await FileCommandAsync(chat, args, ct);
+                return;
             case "usage":
             case "quota":
                 await UsageAsync(chat, 0, ct);
@@ -471,7 +477,7 @@ public sealed class TelegramRemote : IDisposable
                 return;
         }
 
-        if (State(chat).AwaitingRenameTabId is { } renameTabId)
+        if (isText && State(chat).AwaitingRenameTabId is { } renameTabId)
         {
             State(chat).AwaitingRenameTabId = null;
             var rawName = text.Trim();
@@ -502,6 +508,7 @@ public sealed class TelegramRemote : IDisposable
         "• /new [폴더] [claude|codex|antigravity] — 새 대화 열기(계정 선택 지원)\n" +
         "• /resume — 지난 대화 목록에서 골라 이어하기\n" +
         "• /screen — 지금 화면 보기 + 터미널 조작 리모컨\n" +
+        "• /file 경로 — PC 파일을 첨부로 받기(최대 50MB, 상대 경로는 고른 탭 기준)\n" +
         "• /usage — Claude · GPT · Gemini 계정 한도 잔량 조회\n" +
         "• /schedules — 예약 작업 목록 · 지금 실행 · 켜기/끄기 · 결과 보기\n" +
         "• /settings — 기본 모델·추론 강도·권한 변경, 창 열기/트레이 숨기기, 펫 토글\n" +
@@ -516,6 +523,7 @@ public sealed class TelegramRemote : IDisposable
         "• /new [folder] [claude|codex|antigravity] — open a new tab (with account picker)\n" +
         "• /resume — resume from recent conversations\n" +
         "• /screen — view current terminal screen + remote control keys\n" +
+        "• /file path — receive a PC file (up to 50 MB; relative to the selected tab)\n" +
         "• /usage — check Claude / GPT / Gemini account quota\n" +
         "• /schedules — view, run now, toggle, and inspect scheduled tasks\n" +
         "• /settings — change default models/effort/permissions, window/tray, pet\n" +
@@ -1746,6 +1754,51 @@ public sealed class TelegramRemote : IDisposable
 
     // ── 질문 ────────────────────────────────────────────────────────────────
 
+    private async Task FileCommandAsync(long chat, string argument, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(argument))
+        {
+            await Say(chat, L("사용법: /file 결과.pdf 또는 /file \"D:\\작업 폴더\\결과.pdf\" (최대 50MB)",
+                              "Usage: /file result.pdf or /file \"D:\\work folder\\result.pdf\" (up to 50 MB)"), ct);
+            return;
+        }
+        try
+        {
+            var path = argument.Trim();
+            if (path.Length >= 2 && path[0] == '"' && path[^1] == '"') path = path[1..^1];
+            if (!Path.IsPathFullyQualified(path))
+            {
+                var tab = await TargetAsync(chat, false, ct);
+                if (tab is null) return;
+                path = Path.GetFullPath(path, tab.Cwd);
+            }
+            await SendFileAsync(chat, path, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            await Say(chat, L("파일을 보내지 못했습니다: ", "Could not send the file: ") + _api.Scrub(ex.Message), ct);
+        }
+    }
+
+    /// <summary>첨부를 받을 대화를 명시한다. 여러 페어링이 있으면 임의 선택·전체 전송을 하지 않는다.</summary>
+    public static long FileRecipient(IEnumerable<long> allowedChats, long? requested)
+    {
+        var chats = allowedChats.Distinct().ToArray();
+        if (requested is { } id)
+            return chats.Contains(id) ? id : throw new UnauthorizedAccessException("페어링한 대화에만 파일을 보낼 수 있습니다.");
+        return chats.Length == 1 ? chats[0] : throw new InvalidOperationException(
+            chats.Length == 0 ? "먼저 텔레그램 대화를 페어링하세요." : "페어링한 대화가 여러 개입니다. settings telegram status 로 확인한 chatId 를 지정하세요.");
+    }
+
+    /// <summary>앱 에이전트와 /file 명령이 공유하는 첨부 전송. 허용 여부는 보낼 때 다시 검사한다.</summary>
+    public async Task<long> SendFileAsync(long chat, string path, CancellationToken ct = default)
+    {
+        if (!_host.IsAllowed(chat)) throw new UnauthorizedAccessException(L("페어링한 대화에만 파일을 보낼 수 있습니다.", "Files can only be sent to paired chats."));
+        if (!Path.IsPathFullyQualified(path)) throw new ArgumentException(L("파일의 절대 경로를 지정하세요.", "Specify an absolute file path."));
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, _cts.Token);
+        return await _api.SendDocumentAsync(chat, path, linked.Token);
+    }
+
     private async Task AskAsync(long chat, string text, JsonObject msg, CancellationToken ct)
     {
         var tab = await TargetAsync(chat, false, ct);
@@ -1792,10 +1845,24 @@ public sealed class TelegramRemote : IDisposable
         var files = new List<string>();
         string? id = null, name = null;
         long size = 0;
-        if (msg["document"] is JsonObject doc)
+        var media = new[] { ("document", "file"), ("video", "video.mp4"), ("audio", "audio.mp3"),
+            ("voice", "voice.ogg"), ("animation", "animation.mp4"), ("video_note", "video-note.mp4") }
+            .FirstOrDefault(m => msg[m.Item1] is JsonObject);
+        if (media.Item1 is not null && msg[media.Item1] is JsonObject doc)
         {
             id = doc["file_id"]?.GetValue<string>();
-            name = doc["file_name"]?.GetValue<string>() ?? "file";
+            name = doc["file_name"]?.GetValue<string>() ?? media.Item2;
+            if (doc["file_name"] is null && doc["mime_type"]?.GetValue<string>() is { } mime)
+            {
+                var extension = mime.ToLowerInvariant() switch
+                {
+                    "audio/ogg" => ".ogg", "audio/mpeg" => ".mp3", "audio/mp4" => ".m4a",
+                    "audio/wav" or "audio/x-wav" => ".wav", "audio/flac" => ".flac",
+                    "video/mp4" => ".mp4", "video/webm" or "audio/webm" => ".webm", "image/gif" => ".gif",
+                    _ => "",
+                };
+                if (extension.Length > 0) name = Path.ChangeExtension(name, extension);
+            }
             size = doc["file_size"]?.GetValue<long>() ?? 0;
         }
         else if (msg["photo"] is JsonArray photos && photos.Count > 0 && photos[^1] is JsonObject big)
@@ -1814,9 +1881,10 @@ public sealed class TelegramRemote : IDisposable
         {
             var dir = Path.Combine(tab.Cwd, ".agentclihub-attachments", "telegram");
             Directory.CreateDirectory(dir);
-            var safe = string.Concat(Path.GetFileName(name ?? "file").Where(c => !Path.GetInvalidFileNameChars().Contains(c)));
+            var safe = string.Concat(Path.GetFileName(name ?? "file").Where(c => !Path.GetInvalidFileNameChars().Contains(c))).TrimEnd(' ', '.');
             if (safe.Length == 0) safe = "file";
-            var dest = Path.Combine(dir, $"{DateTime.Now:yyyyMMdd-HHmmss-fff}-{safe}");
+            if (safe.Length > 140) safe = safe[..120] + Path.GetExtension(safe)[..Math.Min(Path.GetExtension(safe).Length, 20)];
+            var dest = Path.Combine(dir, $"{DateTime.Now:yyyyMMdd-HHmmss-fff}-{Guid.NewGuid():N}-{safe}");
             await _api.DownloadAsync(id, dest, ct);
             files.Add(dest);
             return files;

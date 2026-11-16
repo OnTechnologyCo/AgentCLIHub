@@ -174,6 +174,19 @@ internal static class AgentConfigChecks
             check(tgBarOff.Exit == 0 && host.LoadSettings().Telegram.ShowQuickBar == false,
                 "settings telegram quickbar toggles persistent bottom quick bar off");
 
+            var attachment = Path.Combine(root, "한글 결과.pdf");
+            var tgSend = await InvokeCliAsync("settings", "telegram", "send-file", attachment, "777");
+            check(tgSend.Exit == 0 && host.LastTelegramFile == (attachment, 777L) && tgSend.Stdout.Contains("messageId"),
+                "helper routes Unicode file path and explicit recipient through settings bridge");
+            var tgDefault = await InvokeCliAsync("config", "telegram", "send-file", attachment);
+            check(tgDefault.Exit == 0 && host.LastTelegramFile == (attachment, null),
+                "config alias preserves omitted file recipient");
+            var tgBadId = await InvokeCliAsync("settings", "telegram", "send-file", attachment, "wrong");
+            var tgRelative = await InvokeCliAsync("settings", "telegram", "send-file", "result.pdf");
+            var tgExtra = await InvokeCliAsync("settings", "telegram", "send-file", attachment, "777", "extra");
+            check(tgBadId.Exit != 0 && tgRelative.Exit != 0 && tgExtra.Exit != 0,
+                "file bridge rejects invalid recipient, relative path and extra arguments");
+
             var schedDir = Path.Combine(root, "sched-work");
             Directory.CreateDirectory(schedDir);
             var schedFile = Path.Combine(root, "job.json");
@@ -319,6 +332,12 @@ internal static class AgentConfigChecks
             return Task.FromResult(GetTelegramState());
         }
 
+        public (string Path, long? ChatId) LastTelegramFile { get; private set; }
+        public Task<object> SendTelegramFileAsync(string path, long? chatId)
+        {
+            LastTelegramFile = (path, chatId);
+            return Task.FromResult<object>(new { sent = true, messageId = 123 });
+        }
         public void ClearTelegramToken() => _rawBotToken = "";
         public object CreateTelegramPairCode() => new { pairCode = "123456" };
         public void RevokeTelegramChat(long chatId) { }

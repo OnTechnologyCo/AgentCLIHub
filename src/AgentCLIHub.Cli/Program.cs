@@ -117,7 +117,10 @@ internal static class Program
 
         // 화면 캡처·페이지 읽기는 몇 초 걸릴 수 있다. 넉넉히 기다리되 무한정은 아니다 —
         // 답이 영영 안 오면 에이전트가 거기서 멈춘 채로 남는다.
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        var sendingFile = cmd is "settings" or "config" && args.Length >= 2 &&
+            args[0].Trim().Equals("telegram", StringComparison.OrdinalIgnoreCase) &&
+            args[1].Trim().Equals("send-file", StringComparison.OrdinalIgnoreCase);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(sendingFile ? 180 : 60));
         var acc = new MemoryStream();
         var buf = new byte[8192];
         while (true)
@@ -179,7 +182,8 @@ internal static class Program
           settings models-refresh [경로]     Antigravity 모델 목록 새로고침
           settings bookmark <list|add|update|move|remove> ...
           settings account <list|rename|add|login|remove> ...
-          settings telegram <status|enable|set-token|clear-token|pair|revoke> ...
+          settings telegram <status|send-file|enable|quickbar|set-token|clear-token|pair|revoke> ...
+          settings telegram send-file <파일 절대경로> [chatId]  페어링한 대화로 파일 첨부 전송 (최대 50MB)
           settings schedule <list|save|enable|run|remove|clear-history> ...
           settings signin <clear-passwords|clear-all> --confirm
 

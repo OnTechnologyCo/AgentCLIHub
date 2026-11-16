@@ -29,7 +29,7 @@
     <AssemblyName>agentclihub-browser</AssemblyName>
     <RootNamespace>AgentCLIHub.Cli</RootNamespace>
     <Product>AgentCLIHub browser bridge</Product>
-    <Version>1.9.9</Version>
+    <Version>1.9.10</Version>
   </PropertyGroup>
 
   <ItemGroup>

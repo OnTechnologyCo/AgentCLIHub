@@ -188,6 +188,7 @@ public sealed class BrowserBridge : IDisposable
         if (line is null) return;
 
         object payload;
+        var timeout = CommandTimeout;
         try
         {
             using var doc = JsonDocument.Parse(line);
@@ -208,8 +209,13 @@ public sealed class BrowserBridge : IDisposable
             if (doc.RootElement.TryGetProperty("args", out var a) && a.ValueKind == JsonValueKind.Array)
                 foreach (var v in a.EnumerateArray()) args.Add(v.GetString() ?? "");
 
+            // 첨부 전송은 API 쪽에서 최대 120초 뒤 취소한다. 그 결과가 올 때까지 기다린다.
+            if (cmd is "settings" or "config" && args.Count >= 2 &&
+                args[0].Trim().Equals("telegram", StringComparison.OrdinalIgnoreCase) &&
+                args[1].Trim().Equals("send-file", StringComparison.OrdinalIgnoreCase))
+                timeout = TimeSpan.FromSeconds(150);
             var result = await _handle(cmd, args.ToArray())
-                .WaitAsync(CommandTimeout).ConfigureAwait(false);
+                .WaitAsync(timeout).ConfigureAwait(false);
             payload = new { ok = true, result };
         }
         catch (TimeoutException)
@@ -217,8 +223,9 @@ public sealed class BrowserBridge : IDisposable
             payload = new
             {
                 ok = false,
-                error = $"명령이 {CommandTimeout.TotalSeconds:0} 초 안에 안 끝났습니다. " +
-                        "창구는 계속 열려 있으니 다음 명령을 보내도 됩니다.",
+                error = timeout == CommandTimeout
+                    ? $"명령이 {CommandTimeout.TotalSeconds:0} 초 안에 안 끝났습니다. 창구는 계속 열려 있으니 다음 명령을 보내도 됩니다."
+                    : "파일 전송 완료를 확인하지 못했습니다. 대화에서 수신 여부를 확인한 뒤 재시도하세요.",
             };
         }
         catch (Exception ex)
